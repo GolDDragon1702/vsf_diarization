@@ -426,7 +426,19 @@ emit_fi = new_emit_fi
 | ASR + Diarization | offline Whisper turbo | **1.07–2.15x (mean ~1.3x)** | batch |
 | ASR + Diarization | offline Qwen3-ASR-1.7B | ~3–4x | batch |
 
-> RTF < 1 = nhanh hơn real-time. Diarization nhanh hơn real-time ~7–10x. Whisper là bottleneck (RTF 1.1–1.6x trên GTX 1650 — chậm hơn real-time), cần GPU mạnh hơn hoặc Whisper small/base cho ứng dụng live.
+> RTF < 1 = nhanh hơn real-time. Diarization nhanh hơn real-time ~7–10x. Whisper là bottleneck (RTF 1.1–1.6x trên GTX 1650 — chậm hơn real-time), cần GPU mạnh hơn cho ứng dụng live.
+
+**Thử giảm RTF — kết quả âm tính (đo trên test01/test03):** mọi cấu hình nhanh hơn đều đánh đổi WER quá nhiều, nên **giữ turbo + float16 + beam_size=5** làm mặc định.
+
+| Cấu hình | RTF (test03) | WER test01 / test03 | Ghi chú |
+|---|---:|---:|---|
+| **turbo float16 beam5 (mặc định)** | ~1.17x | **2.12% / 19.63%** | điểm tối ưu accuracy |
+| `BatchedInferencePipeline` (batch=8) | ~0.99x | 21.69% / 28.07% | re-segment VAD phá word-alignment; GPU 4GB không batch song song nhiều |
+| `beam_size=1` (greedy) | nhiễu | 9.52% / 29.32% | turbo+tiếng Việt nhạy với beam search |
+| `compute_type=int8_float16` | **~0.38x** | 17.99% / 28.70% | nhanh 3–4× nhưng **bỏ sót speech** (test01 miss 16%) |
+| model `small` (float16) | ~0.32x | 29.10% / 39.50% | WER tiếng Việt kém hẳn |
+
+> Pipeline **bị chặn bởi GPU**: turbo+float16 đã là sweet-spot trên GTX 1650. Để giảm RTF mà giữ accuracy → cần GPU mạnh hơn (RTF tỉ lệ nghịch compute). Nếu chấp nhận WER cao hơn cho real-time, `--whisper-model small` / `int8_float16` là lựa chọn có sẵn (không đặt mặc định).
 
 ---
 
