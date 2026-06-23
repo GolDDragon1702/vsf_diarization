@@ -14,20 +14,18 @@ Usage (chạy từ thư mục gốc dự án):
 
 import argparse
 import json
-import pathlib
 import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))  # cho phép chạy trực tiếp
 sys.stdout.reconfigure(encoding="utf-8")
 
-from core.utils import (
+from vsf_diarization.core.utils import (
     get_hf_token, get_audio_input, load_audio, load_diarization_pipeline,
     load_whisper, load_qwen_asr, whisper_transcribe, qwen_transcribe,
     fmt_time, SAMPLE_RATE,
 )
-from core.diarize_offline import run_offline
+from vsf_diarization.core.diarize_offline import run_offline
 
 
 def main():

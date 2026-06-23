@@ -23,12 +23,12 @@ from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-from core.utils import (
+from vsf_diarization.core.utils import (
     get_hf_token, load_audio, load_diarization_pipeline, load_whisper,
     whisper_transcribe, SAMPLE_RATE,
 )
-from core.diarize_offline import run_offline
-from core.diarize_online import run_online
+from vsf_diarization.core.diarize_offline import run_offline
+from vsf_diarization.core.diarize_online import run_online
 
 GT_DIR = Path("ground_truth")
 GT_DIR.mkdir(exist_ok=True)

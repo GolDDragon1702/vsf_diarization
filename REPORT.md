@@ -22,7 +22,7 @@ Xây dựng và đánh giá pipeline nhận dạng giọng nói + phân biệt n
 flowchart TD
     INPUT([audio input])
 
-    subgraph OFF ["Offline — pipelines/pipeline.py"]
+    subgraph OFF ["Offline — vsf-diarize"]
         direction TB
         O1["pyannote/speaker-diarization-3.1\n(full audio, 1 lần)"]
         O2["merge_segments\n(lọc < 0.3s · gộp gap < 0.5s)"]
@@ -31,7 +31,7 @@ flowchart TD
         O1 --> O2 --> O3 --> O4
     end
 
-    subgraph STR ["Streaming — pipelines/pipeline_streaming.py"]
+    subgraph STR ["Streaming — vsf-stream"]
         direction TB
         S1["sliding window\n(chunk=6s · step=1s)"]
         S2["pyannote per-chunk"]
@@ -62,11 +62,11 @@ flowchart TD
 
 *Trung bình trên 11 file GT reviewed. **Online vẫn là chiến lược streaming tốt nhất** — fixed w6 DER 11.67% vs offline raw 14.72%, thắng 7/11 file (mục 6.2); **adaptive per-file window (chọn window GT-free) hạ xuống 9.65%** ≈ offline pipeline, vượt mọi window cố định (mục 6.1). Pipeline offline cho WER thấp nhất (11.84%) nhờ ngữ cảnh full-audio + word-timestamp; streaming end-to-end chạy real-time (RTF 0.97x) đổi lại WER cao hơn (19.25%, mục 6.5).*
 
-> *Adaptive RTF ~0.5x do chạy offline tham chiếu + nhiều window để chọn; nếu chỉ chạy window đã chọn thì ~0.17x. Streaming end-to-end (diarization + ASR real-time) **đã tích hợp** trong `pipelines/pipeline_streaming.py` (dùng chung `stream_online()` + Whisper per-turn): output `{speaker, start, end, text}`, DER 11.57% · WER 19.25% · RTF 0.97x — xem **mục 6.5**.
+> *Adaptive RTF ~0.5x do chạy offline tham chiếu + nhiều window để chọn; nếu chỉ chạy window đã chọn thì ~0.17x. Streaming end-to-end (diarization + ASR real-time) **đã tích hợp** trong `vsf-stream` (`pipeline_streaming.py`, dùng chung `stream_online()` + Whisper per-turn): output `{speaker, start, end, text}`, DER 11.57% · WER 19.25% · RTF 0.97x — xem **mục 6.5**.
 
 ---
 
-### 2.2 Pipeline offline chi tiết (pipelines/pipeline.py)
+### 2.2 Pipeline offline chi tiết (vsf-diarize)
 
 ```mermaid
 flowchart TD
@@ -78,7 +78,7 @@ flowchart TD
     F --> G(["output: [{speaker, start, end, text}]"])
 ```
 
-### 2.3 Pipeline online streaming (pipelines/pipeline_streaming.py / eval/compare_diarization.py)
+### 2.3 Pipeline online streaming (vsf-stream / eval.compare_diarization)
 
 ```mermaid
 flowchart TD
@@ -107,44 +107,43 @@ flowchart TD
 
 ## 3. Cấu trúc file
 
+Code đóng gói trong package `vsf_diarization/` (cài `pip install -e .` → lệnh `vsf-*`).
+
 ```
-diarization/
-│
+vsf_diarization/                # ← Python package
 │  ── core/ — module dùng chung (import) ─────────────────────
 ├── core/diarize_offline.py     # run_offline(): pyannote full-audio → (segments, elapsed)
 ├── core/diarize_online.py      # run_online() + stream_online(): sliding window + majority vote
 ├── core/utils.py               # load_audio, load_models, whisper/qwen_transcribe, compute_der, load_gt, iter_wavs
 │
 │  ── pipelines/ — entry points inference ──────────────────────
-├── pipelines/pipeline.py            # Offline diarization (+ASR): --asr none|whisper|qwen
-├── pipelines/pipeline_streaming.py  # Streaming ASR+diar real-time; --no-asr = chỉ diarization
+├── pipelines/pipeline.py            # vsf-diarize : offline diarization (+ASR) --asr none|whisper|qwen
+├── pipelines/pipeline_streaming.py  # vsf-stream  : streaming real-time; --no-asr = chỉ diarization
 │
 │  ── eval/ — evaluation & comparison ─────────────────────────
-├── eval/evaluate.py            # Pipeline offline vs GT: DER, WER, CER (+Qwen tùy chọn)
-├── eval/eval_streaming.py         # Streaming end-to-end vs GT: DER + WER/CER + coverage
+├── eval/evaluate.py            # vsf-evaluate : offline vs GT — DER, WER, CER (+Qwen)
+├── eval/eval_streaming.py      # vsf-eval-streaming : streaming end-to-end vs GT
 ├── eval/compare_diarization.py # Offline vs online diarization (DER vs GT)
 ├── eval/sweep_online.py        # Quét window × threshold (load model 1 lần)
 ├── eval/adaptive_window.py     # Chọn window per-file GT-free (offline-agreement) → 9.65%
-├── eval/sweep_streaming.py        # Quét min_asr cho streaming
+├── eval/sweep_streaming.py     # Quét min_asr cho streaming
 ├── eval/eval_asr_models.py     # Benchmark ASR per-segment Whisper|Qwen|Nemotron (self-contained)
 ├── eval/compare_asr_3models.py # In bảng 3 model từ outputs/asr_*.json (không GPU)
-│
-├── create_ground_truth.py      # Tạo draft GT từ best pipeline, để annotate thủ công
-├── run_nemotron.sh             # Cài NeMo + benchmark Nemotron (WSL2)
-│
-│  ── Data / config ──────────────────────────────────────────
-├── ground_truth/               # GT files (*.json) — 11 reviewed (test01–test11)
-├── test/  outputs/             # WAV test · kết quả JSON
-├── .env / .env.example  requirements.txt  setup_venv.ps1
+└── create_ground_truth.py      # vsf-create-gt : tạo draft GT để annotate tay
+
+pyproject.toml                  # metadata + deps + entry points vsf-*
+Dockerfile / .dockerignore      # image GPU CUDA 12.8
+run_nemotron.sh                 # Nemotron benchmark (WSL2)
+ground_truth/ · test/ · outputs/  # dữ liệu runtime (.gitignore)
 ```
 
 **Lưu ý về overlap giữa scripts:**
-| Script | Mô tả | Khi nào dùng |
+| Lệnh | Mô tả | Khi nào dùng |
 |--------|--------|--------------|
-| `eval/evaluate.py` | Đầy đủ nhất: chạy pipeline offline + so sánh GT + tùy chọn Qwen3 | Đánh giá chất lượng có GT |
-| `eval/eval_asr_models.py` | Benchmark ASR thuần per-segment (Whisper/Qwen/Nemotron) | So WER các model trên cùng audio |
-| `eval/compare_diarization.py` | Offline vs Online diarization, có GT | Đánh giá chiến lược diarization |
-| `pipelines/pipeline.py --asr none\|whisper\|qwen` | Inference offline 1 file | Chạy thực tế (diarization + ASR) |
+| `vsf-evaluate` | Đầy đủ nhất: chạy pipeline offline + so sánh GT + tùy chọn Qwen3 | Đánh giá chất lượng có GT |
+| `eval.eval_asr_models` | Benchmark ASR thuần per-segment (Whisper/Qwen/Nemotron) | So WER các model trên cùng audio |
+| `eval.compare_diarization` | Offline vs Online diarization, có GT | Đánh giá chiến lược diarization |
+| `vsf-diarize --asr none\|whisper\|qwen` | Inference offline 1 file | Chạy thực tế (diarization + ASR) |
 
 ---
 
@@ -390,7 +389,7 @@ emit_fi = new_emit_fi
 
 ### 6.5 Đánh giá streaming end-to-end (diarization + ASR)
 
-*`pipelines/pipeline_streaming.py` đã refactor để dùng chung `stream_online()` (cùng thuật toán đã benchmark). Mỗi turn ổn định: turn ≥ `min_asr` (1.0s) → Whisper nhận dạng; turn ngắn hơn → in `"..."` (bỏ ASR, tránh hallucinate); turn < 0.3s bị loại (nhiễu biên). Đo bằng `eval_streaming.py` trên 11 file, config chunk=6s/step=1s/threshold=0.70.*
+*`vsf-stream` (`pipeline_streaming.py`) dùng chung `stream_online()` (cùng thuật toán đã benchmark). Mỗi turn ổn định: turn ≥ `min_asr` (1.0s) → Whisper nhận dạng; turn ngắn hơn → in `"..."` (bỏ ASR, tránh hallucinate); turn < 0.3s bị loại (nhiễu biên). Đo bằng `eval_streaming.py` trên 11 file, config chunk=6s/step=1s/threshold=0.70.*
 
 | File | DER | WER (e2e) | CER | ASR coverage | RTF |
 |------|----:|----:|----:|:----:|----:|

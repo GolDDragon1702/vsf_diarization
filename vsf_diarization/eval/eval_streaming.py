@@ -22,13 +22,11 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8")
 warnings.filterwarnings("ignore")
 
-import pathlib
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))  # cho phép chạy trực tiếp
-from core.utils import (
+from vsf_diarization.core.utils import (
     get_hf_token, load_audio, load_diarization_pipeline, load_whisper,
     compute_der, compute_asr_metrics, load_gt, iter_wavs, SAMPLE_RATE,
 )
-from pipelines.pipeline_streaming import run_stream
+from vsf_diarization.pipelines.pipeline_streaming import run_stream
 
 
 def main():

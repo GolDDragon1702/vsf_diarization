@@ -1,0 +1,29 @@
+# Môi trường / cache
+venv/
+venv_nemo/
+.venv/
+.git/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.cache/
+.sixth/
+.claude/
+
+# Secrets
+.env
+
+# Dữ liệu runtime (mount lúc chạy thay vì bỏ vào image)
+test/
+ground_truth/
+outputs/
+*.wav
+*.mp3
+*.m4a
+*.flac
+
+# Không cần trong image
+REPORT.md
+setup_venv.ps1
+run_nemotron.sh

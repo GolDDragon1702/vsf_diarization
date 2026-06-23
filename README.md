@@ -33,31 +33,26 @@ Chạy trên GPU CUDA (NVIDIA GTX 1650+) hoặc CPU.
 ## Cài đặt
 
 ```powershell
-# 1. Clone hoặc copy project về máy
+# 1. Clone repo + tạo virtual environment
+git clone https://github.com/GolDDragon1702/vsf_diarization.git
+cd vsf_diarization
+python -m venv venv; .\venv\Scripts\Activate.ps1
 
-# 2. Tạo virtual environment
-python -m venv venv
-.\venv\Scripts\Activate.ps1
+# 2. Cài PyTorch TRƯỚC (theo CUDA của bạn) — pyannote phụ thuộc torch
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128   # GPU CUDA 12.8
+# pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu   # hoặc CPU
 
-# 3. Cài PyTorch (chọn 1 trong 2)
-# GPU (CUDA 12.8):
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
-# CPU:
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+# 3. Cài package (kéo theo pyannote/whisper/jiwer/... + tạo lệnh vsf-*)
+pip install -e .                # cơ bản
+# pip install -e ".[qwen]"      # kèm Qwen3-ASR
 
-# 4. Cài các thư viện còn lại
-pip install pyannote.audio faster-whisper soundfile sounddevice numpy python-dotenv
-pip install pyannote.metrics jiwer librosa   # evaluate.py / eval_asr_models.py
-pip install qwen-asr                          # chỉ khi dùng Qwen3-ASR
-
-# 5. Cấu hình token
-cp .env.example .env
-# Mở .env, điền HF_TOKEN=hf_xxxx...
+# 4. Cấu hình token
+cp .env.example .env            # rồi mở .env điền HF_TOKEN=hf_xxxx...
 ```
 
-> **Tự động:** có thể chạy `setup_venv.ps1` (PowerShell) để tạo venv + cài sẵn các bước trên.
->
-> **Nemotron-3.5-ASR (tùy chọn):** chỉ chạy được trên **Linux/WSL** (không phải Windows native). Không cài vào venv này — dùng `bash run_nemotron.sh` trong WSL, nó tự tạo venv riêng. Xem **Bảng tra cứu → mục 5) Nemotron** bên dưới.
+Sau khi cài, các lệnh **`vsf-diarize` · `vsf-stream` · `vsf-evaluate` · `vsf-eval-streaming` · `vsf-create-gt`** có sẵn trên PATH (xem [Bảng tra cứu](#bảng-tra-cứu-chạy-từng-script)). Hoặc dùng Docker (mục [Docker](#docker-gpu) bên dưới).
+
+> **Nemotron-3.5-ASR (tùy chọn):** chỉ chạy được trên **Linux/WSL**. Không cài vào venv này — dùng `bash run_nemotron.sh` trong WSL (tự tạo venv riêng).
 
 **Lưu ý:** Cần chấp nhận điều khoản sử dụng tại:
 - https://huggingface.co/pyannote/speaker-diarization-3.1
@@ -67,50 +62,37 @@ cp .env.example .env
 
 ## Sử dụng nhanh
 
+> Sau khi `pip install -e .`, dùng lệnh `vsf-*`. (Chưa cài thì thay bằng `python -m vsf_diarization.pipelines.pipeline …`.)
+
 ### Nhận dạng file audio (offline)
 
 ```bash
-# Whisper turbo — output ai nói gì lúc nào
-python pipelines/pipeline.py audio.wav --asr whisper --language vi
-
-# Qwen3-ASR-1.7B thay cho Whisper
-python pipelines/pipeline.py audio.wav --asr qwen --language vi
-
-# Chỉ diarization (không ASR)
-python pipelines/pipeline.py audio.wav --asr none --num-speakers 2
+vsf-diarize audio.wav --asr whisper --language vi      # Whisper turbo: ai nói gì lúc nào
+vsf-diarize audio.wav --asr qwen    --language vi      # Qwen3-ASR-1.7B thay Whisper
+vsf-diarize audio.wav --asr none    --num-speakers 2   # chỉ diarization (không ASR)
 ```
 
 ### Streaming real-time
 
 ```bash
-# Từ microphone
-python pipelines/pipeline_streaming.py --source mic
-
-# Giả lập streaming từ file
-python pipelines/pipeline_streaming.py --source audio.wav --language vi
-
-# Chỉ diarization streaming (không ASR)
-python pipelines/pipeline_streaming.py --source audio.wav --no-asr
+vsf-stream --source mic                                # từ microphone
+vsf-stream --source audio.wav --language vi            # giả lập streaming từ file
+vsf-stream --source audio.wav --no-asr                 # chỉ diarization streaming
 ```
 
 ### Đánh giá chất lượng (cần ground truth)
 
 ```bash
-# Bước 1: Tạo draft ground truth
-python create_ground_truth.py test/audio.wav --language vi
-# → Tạo ground_truth/audio.json
+# Bước 1: tạo draft ground truth  → ground_truth/audio.json
+vsf-create-gt test/audio.wav --language vi
 
-# Bước 2: Chỉnh sửa thủ công ground_truth/audio.json
-# - Đổi SPEAKER_00 → tên thật (tuỳ chọn)
-# - Sửa text sai, timestamp lệch
-# - Đổi annotation_status: "draft" → "reviewed"
+# Bước 2: sửa tay ground_truth/audio.json (tên speaker, text, timestamp),
+#         đổi annotation_status: "draft" → "reviewed"
 
-# Bước 3: Chạy đánh giá
-python eval/evaluate.py test/audio.wav --language vi
-python eval/evaluate.py test/audio.wav --compare-qwen --language vi  # so sánh 2 model
-
-# Đánh giá toàn bộ folder
-python eval/evaluate.py test/ --language vi --output outputs/eval_results.json
+# Bước 3: chạy đánh giá (chạy từ thư mục có ground_truth/ + test/)
+vsf-evaluate test/audio.wav --language vi
+vsf-evaluate test/audio.wav --compare-qwen --language vi   # so sánh 2 model
+vsf-evaluate test/ --language vi --output outputs/eval_results.json   # cả folder
 ```
 
 > Đánh giá & so sánh model/chiến lược: xem **[Bảng tra cứu: chạy từng script](#bảng-tra-cứu-chạy-từng-script)** bên dưới.
@@ -120,109 +102,116 @@ python eval/evaluate.py test/ --language vi --output outputs/eval_results.json
 
 ## Cấu trúc file
 
-> **Chạy mọi lệnh từ thư mục gốc dự án** (`diarization/`). Các script trong `pipelines/` và `eval/` tự thêm gốc dự án vào `sys.path`, nên chạy trực tiếp `python pipelines/pipeline.py …` hoặc dạng module `python -m pipelines.pipeline …` đều được.
+> Code nằm trong package `vsf_diarization/`. Sau `pip install -e .` dùng lệnh `vsf-*`; hoặc `python -m vsf_diarization.<sub>.<module>`. Chạy **từ thư mục có `ground_truth/`, `test/`** (đường dẫn dữ liệu là tương đối CWD).
 
 ```
-diarization/
+vsf_diarization/                    # ← Python package (pip install -e .)
 │  ── core/ — module dùng chung (chỉ import) ──────────────────
 ├── core/utils.py               # load_audio · load_*models · whisper/qwen_transcribe · compute_der/asr · load_gt · iter_wavs
 ├── core/diarize_offline.py     # run_offline(): pyannote full-audio → (segments, elapsed)
 ├── core/diarize_online.py      # run_online() (batch) + stream_online() (generator): sliding window + majority vote
 │
-│  ── pipelines/ — inference (chạy từ gốc dự án) ───────────────
-├── pipelines/pipeline.py            # Offline diarization (+ASR): --asr none|whisper|qwen
-├── pipelines/pipeline_streaming.py  # Streaming ASR+diar real-time (mic/file); --no-asr = chỉ diarization
+│  ── pipelines/ — inference (entry points) ───────────────────
+├── pipelines/pipeline.py            # vsf-diarize : offline diarization (+ASR) --asr none|whisper|qwen
+├── pipelines/pipeline_streaming.py  # vsf-stream  : streaming real-time (mic/file); --no-asr = chỉ diarization
 │
 │  ── eval/ — ground truth & đánh giá ──────────────────────────
-├── eval/evaluate.py            # DER + WER + CER vs GT (offline; tùy chọn so Qwen)
-├── eval/eval_streaming.py         # Đánh giá streaming end-to-end (DER + WER/CER + coverage)
+├── eval/evaluate.py            # vsf-evaluate : DER + WER + CER vs GT (offline; +Qwen tùy chọn)
+├── eval/eval_streaming.py      # vsf-eval-streaming : đánh giá streaming end-to-end
 ├── eval/compare_diarization.py # Offline vs Online diarization (DER vs GT)
 ├── eval/sweep_online.py        # Quét window × threshold (load model 1 lần)
 ├── eval/adaptive_window.py     # Chọn window per-file GT-free (offline-agreement) → DER 9.65%
-├── eval/sweep_streaming.py        # Quét min_asr cho streaming (transcribe 1 lần, mask N ngưỡng)
-├── eval/eval_asr_models.py     # Benchmark ASR per-segment: Whisper|Qwen|Nemotron (self-contained, chạy được venv_nemo)
-├── eval/compare_asr_3models.py # In bảng so sánh 3 model từ outputs/asr_*.json (không cần GPU)
+├── eval/sweep_streaming.py     # Quét min_asr cho streaming (transcribe 1 lần, mask N ngưỡng)
+├── eval/eval_asr_models.py     # Benchmark ASR per-segment: Whisper|Qwen|Nemotron (self-contained)
+├── eval/compare_asr_3models.py # In bảng so sánh 3 model từ outputs/asr_*.json (không GPU)
 │
-├── create_ground_truth.py      # Tạo draft GT (annotate thủ công rồi đổi status=reviewed)
-├── run_nemotron.sh             # Cài NeMo + benchmark Nemotron trong WSL2 (chỉ Linux/WSL)
-│
-│  ── Data / config ───────────────────────────────────────────
-├── ground_truth/               # GT *.json — 11 reviewed (test01–test11)
-├── test/                       # WAV test (test01.wav … test11.wav)
-├── outputs/                    # JSON kết quả evaluation
-├── .env / .env.example         # HF_TOKEN, HF_HOME
-├── requirements.txt
-└── setup_venv.ps1              # Script tạo venv tự động (PowerShell)
+└── create_ground_truth.py      # vsf-create-gt : tạo draft GT (annotate tay → reviewed)
+
+pyproject.toml                  # metadata + deps + entry points vsf-*
+Dockerfile / .dockerignore      # image GPU CUDA 12.8
+run_nemotron.sh                 # Nemotron benchmark (WSL2)
+setup_venv.ps1                  # tạo venv + pip install -e . (PowerShell)
+ground_truth/ · test/ · outputs/  # dữ liệu runtime (không trong package; .gitignore)
+.env / .env.example             # HF_TOKEN, HF_HOME
 ```
 
 ---
 
 ## Bảng tra cứu: chạy từng script
 
-> Chạy **từ thư mục gốc dự án**. Hầu hết nhận `input` là **file `.wav`** hoặc **thư mục** (xử lý mọi `.wav` bên trong). Thêm `--num-speakers 2` nếu biết trước số người nói. Mọi script cần `HF_TOKEN` trong `.env` (trừ `eval/compare_asr_3models.py`).
+> Sau `pip install -e .` dùng lệnh `vsf-*`. Script chưa có entry point thì chạy `python -m vsf_diarization.eval.<module>`. Chạy **từ thư mục có `ground_truth/`, `test/`**. Mọi lệnh cần `HF_TOKEN` trong `.env` (trừ `compare_asr_3models`).
 
 ### 1) Inference — nhận dạng / phân tách
 
-| Script | Lệnh chạy | Output |
+| Lệnh | Cú pháp | Output |
 |--------|-----------|--------|
-| **pipelines/pipeline.py** | `python pipelines/pipeline.py audio.wav --asr whisper --language vi [--num-speakers 2] [--output out.json]` | `{speaker, start, end, text}` (Whisper turbo) |
-| ↳ Qwen3-ASR | `python pipelines/pipeline.py audio.wav --asr qwen --language vi [--qwen-model Qwen/Qwen3-ASR-1.7B]` | như trên (Qwen3-ASR) |
-| ↳ chỉ diarization | `python pipelines/pipeline.py audio.wav --asr none [--num-speakers 2]` | chỉ `{speaker, start, end}` |
+| **vsf-diarize** | `vsf-diarize audio.wav --asr whisper --language vi [--num-speakers 2] [--output out.json]` | `{speaker, start, end, text}` (Whisper turbo) |
+| ↳ Qwen3-ASR | `vsf-diarize audio.wav --asr qwen --language vi [--qwen-model Qwen/Qwen3-ASR-1.7B]` | như trên (Qwen3-ASR) |
+| ↳ chỉ diarization | `vsf-diarize audio.wav --asr none [--num-speakers 2]` | chỉ `{speaker, start, end}` |
 
 ### 2) Streaming real-time
 
-| Script | Lệnh chạy | Ghi chú |
+| Lệnh | Cú pháp | Ghi chú |
 |--------|-----------|---------|
-| **pipelines/pipeline_streaming.py** | `python pipelines/pipeline_streaming.py --source audio.wav --language vi --num-speakers 2 [--min-asr 1.0] [--output out.json] [--realtime]`<br>`python pipelines/pipeline_streaming.py --source mic --language vi` | ASR + diarization (dùng chung `stream_online`), in dần; turn < `min-asr` in `"..."` |
-| ↳ chỉ diarization | `python pipelines/pipeline_streaming.py --source audio.wav --no-asr --chunk 6 --step 1 [--output out.json]` | bỏ Whisper, emit segment {speaker,start,end} dần |
+| **vsf-stream** | `vsf-stream --source audio.wav --language vi --num-speakers 2 [--min-asr 1.0] [--output out.json] [--realtime]`<br>`vsf-stream --source mic --language vi` | ASR + diarization (dùng chung `stream_online`), in dần; turn < `min-asr` in `"..."` |
+| ↳ chỉ diarization | `vsf-stream --source audio.wav --no-asr --chunk 6 --step 1 [--output out.json]` | bỏ Whisper, emit segment {speaker,start,end} dần |
 
 ### 3) Tạo & đánh giá ground truth
 
-| Script | Lệnh chạy | Mục đích |
+| Lệnh | Cú pháp | Mục đích |
 |--------|-----------|----------|
-| **create_ground_truth.py** | `python create_ground_truth.py test/ --language vi [--strategy offline\|online] [--force]` | tạo `ground_truth/*.json` draft → sửa tay → đổi `annotation_status: reviewed` |
-| **eval/evaluate.py** | `python eval/evaluate.py test/ --language vi [--compare-qwen] --output outputs/eval_results.json` | DER + WER + CER cho pipeline Whisper (và Qwen nếu `--compare-qwen`) |
-| **eval/eval_streaming.py** | `python eval/eval_streaming.py test/ --language vi --min-asr 1.0 --output outputs/streaming_eval.json` | Đánh giá streaming end-to-end: DER + WER/CER + ASR coverage |
+| **vsf-create-gt** | `vsf-create-gt test/ --language vi [--strategy offline\|online] [--force]` | tạo `ground_truth/*.json` draft → sửa tay → đổi `annotation_status: reviewed` |
+| **vsf-evaluate** | `vsf-evaluate test/ --language vi [--compare-qwen] --output outputs/eval_results.json` | DER + WER + CER cho pipeline Whisper (và Qwen nếu `--compare-qwen`) |
+| **vsf-eval-streaming** | `vsf-eval-streaming test/ --language vi --min-asr 1.0 --output outputs/streaming_eval.json` | Đánh giá streaming end-to-end: DER + WER/CER + ASR coverage |
 
-### 4) So sánh chiến lược & model
+### 4) So sánh chiến lược & model  (`python -m vsf_diarization.eval.<module>`)
 
-| Script | Lệnh chạy | Mục đích |
+| Module | Cú pháp | Mục đích |
 |--------|-----------|----------|
-| **eval/compare_diarization.py** | `python eval/compare_diarization.py test/ --window 6 --step 1 --threshold 0.70 --output outputs/diar_11files_w6.json` | Offline (pyannote raw) vs Online (streaming) — DER vs GT |
-| **eval/sweep_online.py** | `python eval/sweep_online.py test/ --windows 4 6 9 --thresholds 0.70 0.80 --step 1 --output outputs/sweep_online.json` | tìm window×threshold tối ưu (in BEST) |
-| **eval/adaptive_window.py** | `python eval/adaptive_window.py test/ --windows 4 6 9 --output outputs/adaptive_window.json` | chọn window per-file GT-free (offline-agreement); in adaptive vs oracle vs fixed |
-| **eval/sweep_streaming.py** | `python eval/sweep_streaming.py test/ --language vi --min-asr 1.0 1.5 2.0 --output outputs/streaming_sweep.json` | quét ngưỡng `min_asr` (WER vs coverage) |
-| **eval/eval_asr_models.py** | `python eval/eval_asr_models.py test/ --model whisper --language vi --output outputs/asr_whisper.json`<br>`python eval/eval_asr_models.py test/ --model qwen --language vi --output outputs/asr_qwen.json` | benchmark ASR thuần (cắt theo GT segment), WER/CER/RTF |
-| **eval/compare_asr_3models.py** | `python eval/compare_asr_3models.py` | in bảng so sánh Whisper/Qwen/Nemotron từ `outputs/asr_*.json` (không GPU) |
+| **eval.compare_diarization** | `python -m vsf_diarization.eval.compare_diarization test/ --window 6 --step 1 --threshold 0.70 --output outputs/diar_11files_w6.json` | Offline (pyannote raw) vs Online (streaming) — DER vs GT |
+| **eval.sweep_online** | `python -m vsf_diarization.eval.sweep_online test/ --windows 4 6 9 --thresholds 0.70 0.80 --step 1 --output outputs/sweep_online.json` | tìm window×threshold tối ưu (in BEST) |
+| **eval.adaptive_window** | `python -m vsf_diarization.eval.adaptive_window test/ --windows 4 6 9 --output outputs/adaptive_window.json` | chọn window per-file GT-free (offline-agreement); in adaptive vs oracle vs fixed |
+| **eval.sweep_streaming** | `python -m vsf_diarization.eval.sweep_streaming test/ --language vi --min-asr 1.0 1.5 2.0 --output outputs/streaming_sweep.json` | quét ngưỡng `min_asr` (WER vs coverage) |
+| **eval.eval_asr_models** | `python -m vsf_diarization.eval.eval_asr_models test/ --model whisper --language vi --output outputs/asr_whisper.json`<br>`… --model qwen …` | benchmark ASR thuần (cắt theo GT segment), WER/CER/RTF |
+| **eval.compare_asr_3models** | `python -m vsf_diarization.eval.compare_asr_3models` | in bảng so sánh Whisper/Qwen/Nemotron từ `outputs/asr_*.json` (không GPU) |
 
 ### 5) Nemotron-3.5 ASR (chỉ Linux/WSL — xem [REPORT.md](REPORT.md) mục 5.2/8.1)
 
 ```bash
 # Trong WSL2 Ubuntu, tại thư mục project:
-cd /mnt/c/Users/longph31/Documents/diarization
-bash run_nemotron.sh                  # tự cài NeMo + chạy 11 file → outputs/asr_nemotron.json
-python compare_asr_3models.py         # xem so sánh 3 model
+bash run_nemotron.sh                                       # cài NeMo + chạy 11 file → outputs/asr_nemotron.json
+python -m vsf_diarization.eval.compare_asr_3models         # xem so sánh 3 model
 ```
 > Nemotron **không chạy được trên Windows native** (NeMo transcribe() lỗi: numpy decode rỗng / khóa manifest tạm). `run_nemotron.sh` tự cài `torch cu128 + nemo_toolkit[asr] git@main` trong WSL.
+
+### Docker (GPU)
+
+```bash
+docker build -t vsf-diarization .
+docker run --gpus all -e HF_TOKEN=hf_xxx \
+  -v "$PWD/test:/app/test" -v "$PWD/outputs:/app/outputs" \
+  vsf-diarization  vsf-diarize test/test01.wav --asr whisper --language vi
+```
+> Image base CUDA 12.8 + torch cu128; mount `test/`, `ground_truth/`, `outputs/` làm volume. Đổi `vsf-diarize` thành `vsf-stream` / `vsf-evaluate` … để chạy lệnh khác.
 
 ---
 
 ## Tham số quan trọng
 
-### pipelines/pipeline.py / eval/evaluate.py
+### vsf-diarize / vsf-evaluate
 
 | Tham số | Mặc định | Mô tả |
 |---------|----------|-------|
 | `--whisper-model` | `turbo` | Kích thước Whisper: tiny, base, small, medium, large-v3, turbo |
 | `--language` | auto | Mã ngôn ngữ: `vi`, `en`, `zh`, ... |
 | `--num-speakers` | auto | Gợi ý số người nói (giúp tăng DER) |
-| `--compare-qwen` | off | Chạy thêm Qwen3-ASR để so sánh |
+| `--compare-qwen` | off | (vsf-evaluate) Chạy thêm Qwen3-ASR để so sánh |
 
-### compare_diarization.py
+### vsf-stream / compare_diarization (online window)
 
 | Tham số | Tối ưu | Mô tả |
 |---------|--------|-------|
-| `--window` | `6` | Kích thước cửa sổ (giây) — 6s default streaming (DER 11.67%, latency thấp); 9s chính xác hơn (10.53%); 4s gây confusion. Dùng `adaptive_window.py` để chọn tự động per-file (9.65%) |
+| `--window` | `6` | Kích thước cửa sổ (giây) — 6s default streaming (DER 11.67%, latency thấp); 9s chính xác hơn (10.53%); 4s gây confusion. Dùng `eval.adaptive_window` để chọn tự động per-file (9.65%) |
 | `--step` | `1` | Bước trượt (giây) — nhỏ hơn = latency thấp hơn, nhiều computation hơn |
 | `--threshold` | `0.70` | Cosine similarity cho speaker registry — 0.70 tối ưu; 0.80 gây over-split, DER tệ hơn |
 
@@ -236,7 +225,7 @@ python compare_asr_3models.py         # xem so sánh 3 model
 flowchart TD
     INPUT([audio input])
 
-    subgraph OFF ["Offline — pipelines/pipeline.py"]
+    subgraph OFF ["Offline — vsf-diarize"]
         direction TB
         O1["pyannote/speaker-diarization-3.1\n(full audio, 1 lần)"]
         O2["merge_segments\n(lọc < 0.3s · gộp gap < 0.5s)"]
@@ -245,7 +234,7 @@ flowchart TD
         O1 --> O2 --> O3 --> O4
     end
 
-    subgraph STR ["Streaming — pipelines/pipeline_streaming.py"]
+    subgraph STR ["Streaming — vsf-stream"]
         direction TB
         S1["sliding window\n(chunk=6s · step=1s)"]
         S2["pyannote per-chunk"]

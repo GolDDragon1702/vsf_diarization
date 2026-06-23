@@ -24,19 +24,17 @@ Tham số streaming (giống stream_online):
 """
 
 import argparse
-import pathlib
 import sys
 import time
 import warnings
 
 import numpy as np
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))  # cho phép chạy trực tiếp
-from core.utils import (
+from vsf_diarization.core.utils import (
     get_hf_token, get_audio_input, load_audio, load_diarization_pipeline,
     load_whisper, fmt_time, SAMPLE_RATE,
 )
-from core.diarize_online import stream_online
+from vsf_diarization.core.diarize_online import stream_online
 
 sys.stdout.reconfigure(encoding="utf-8")
 warnings.filterwarnings("ignore")

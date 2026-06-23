@@ -23,14 +23,12 @@ import torch
 sys.stdout.reconfigure(encoding="utf-8")
 warnings.filterwarnings("ignore")
 
-import pathlib
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))  # cho phép chạy trực tiếp
-from core.utils import (
+from vsf_diarization.core.utils import (
     get_hf_token, load_audio, load_diarization_pipeline,
     compute_der, fmt_time, load_gt, SAMPLE_RATE,
 )
-from core.diarize_offline import run_offline
-from core.diarize_online import run_online
+from vsf_diarization.core.diarize_offline import run_offline
+from vsf_diarization.core.diarize_online import run_online
 
 
 # ── Stats ─────────────────────────────────────────────────────────────────────

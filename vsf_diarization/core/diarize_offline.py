@@ -13,7 +13,7 @@ import time
 import numpy as np
 import torch
 
-from core.utils import SAMPLE_RATE, merge_segments
+from vsf_diarization.core.utils import SAMPLE_RATE, merge_segments
 
 
 def run_offline(

@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vsf-diarization"
+version = "0.1.0"
+description = "Vietnamese speech diarization + ASR (pyannote + Whisper/Qwen), offline & streaming"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "GolDDragon1702" }]
+keywords = ["speech", "diarization", "asr", "vietnamese", "pyannote", "whisper", "streaming"]
+
+# torch / torchaudio cài riêng theo CUDA (xem README), nên không pin ở đây
+# để tránh ghi đè bản cu128 bằng bản CPU.
+dependencies = [
+    "pyannote.audio>=3.1.0",
+    "faster-whisper>=1.0.0",
+    "soundfile>=0.12.0",
+    "sounddevice>=0.4.6",
+    "numpy>=1.24.0",
+    "python-dotenv>=1.0.0",
+    "pyannote.metrics",
+    "jiwer",
+    "librosa>=0.10",
+]
+
+[project.optional-dependencies]
+qwen = ["qwen-asr"]            # ASR Qwen3 (pip install -e ".[qwen]")
+
+[project.urls]
+Repository = "https://github.com/GolDDragon1702/vsf_diarization"
+
+[project.scripts]
+vsf-diarize        = "vsf_diarization.pipelines.pipeline:main"
+vsf-stream         = "vsf_diarization.pipelines.pipeline_streaming:main"
+vsf-evaluate       = "vsf_diarization.eval.evaluate:main"
+vsf-eval-streaming = "vsf_diarization.eval.eval_streaming:main"
+vsf-create-gt      = "vsf_diarization.create_ground_truth:main"
+
+[tool.setuptools.packages.find]
+include = ["vsf_diarization*"]
