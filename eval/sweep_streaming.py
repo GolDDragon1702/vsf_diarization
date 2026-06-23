@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Sweep min_asr cho Phase 3 streaming (tìm trade-off WER vs coverage).
+Sweep min_asr cho streaming end-to-end (tìm trade-off WER vs coverage).
 
 Tối ưu: với mỗi file chỉ diarize + transcribe MỖI turn 1 lần (transcript của turn
 dài là superset). Sau đó mỗi min_asr chỉ cần mask turn dur < min_asr -> "...".
 => 1× chi phí thay vì N× (DER không đổi theo min_asr; chỉ WER/CER/coverage đổi).
 
-Usage:
-  python sweep_phase3.py test/ --language vi --min-asr 1.0 1.5 2.0 \
-      --output outputs/phase3_sweep.json
+Usage (chạy từ thư mục gốc dự án):
+  python eval/sweep_streaming.py test/ --language vi --min-asr 1.0 1.5 2.0 \
+      --output outputs/streaming_sweep.json
 """
 
 import argparse
@@ -65,7 +65,7 @@ def mask(turns, min_asr):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Sweep min_asr cho Phase 3 streaming")
+    ap = argparse.ArgumentParser(description="Sweep min_asr cho streaming end-to-end")
     ap.add_argument("input", nargs="+", help="WAV file(s) hoặc folder")
     ap.add_argument("--hf-token")
     ap.add_argument("--whisper-model", default="turbo")

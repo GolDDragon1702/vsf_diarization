@@ -8,7 +8,7 @@ faster-whisper>=1.0.0
 
 # Audio I/O
 soundfile>=0.12.0
-sounddevice>=0.4.6      # Phase 3 microphone input
+sounddevice>=0.4.6      # streaming microphone input
 numpy>=1.24.0
 
 # Utilities

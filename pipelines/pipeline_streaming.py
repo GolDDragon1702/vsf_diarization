@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Phase 3 — Streaming ASR + Speaker Diarization (dùng chung stream_online()).
-[trước đây: phase3_streaming.py; --no-asr thay cho stream_diarization.py]
+Streaming end-to-end — ASR + Speaker Diarization (dùng chung stream_online()).
+[--no-asr = chỉ diarization streaming]
 
 Diarization streaming dùng cùng thuật toán đã benchmark trong core/diarize_online.py
 (sliding window + majority-vote 50ms/frame). Mỗi khi một speaker-turn trở nên ổn
@@ -147,7 +147,7 @@ def record_mic() -> np.ndarray:
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 def main():
-    ap = argparse.ArgumentParser(description="Phase 3: streaming diarization + ASR (stream_online)")
+    ap = argparse.ArgumentParser(description="Streaming end-to-end: diarization + ASR (stream_online)")
     ap.add_argument("--source", default="mic", help="'mic' hoặc đường dẫn file audio/video")
     ap.add_argument("--hf-token")
     ap.add_argument("--whisper-model", default="turbo")

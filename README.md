@@ -130,16 +130,16 @@ diarization/
 ├── core/diarize_online.py      # run_online() (batch) + stream_online() (generator): sliding window + majority vote
 │
 │  ── pipelines/ — inference (chạy từ gốc dự án) ───────────────
-├── pipelines/pipeline.py            # Offline diarization (+ASR): --asr none|whisper|qwen  [gộp phase1/2/qwen]
+├── pipelines/pipeline.py            # Offline diarization (+ASR): --asr none|whisper|qwen
 ├── pipelines/pipeline_streaming.py  # Streaming ASR+diar real-time (mic/file); --no-asr = chỉ diarization
 │
 │  ── eval/ — ground truth & đánh giá ──────────────────────────
 ├── eval/evaluate.py            # DER + WER + CER vs GT (offline; tùy chọn so Qwen)
-├── eval/eval_phase3.py         # Đánh giá streaming end-to-end (DER + WER/CER + coverage)
+├── eval/eval_streaming.py         # Đánh giá streaming end-to-end (DER + WER/CER + coverage)
 ├── eval/compare_diarization.py # Offline vs Online diarization (DER vs GT)
 ├── eval/sweep_online.py        # Quét window × threshold (load model 1 lần)
 ├── eval/adaptive_window.py     # Chọn window per-file GT-free (offline-agreement) → DER 9.65%
-├── eval/sweep_phase3.py        # Quét min_asr cho Phase 3 (transcribe 1 lần, mask N ngưỡng)
+├── eval/sweep_streaming.py        # Quét min_asr cho streaming (transcribe 1 lần, mask N ngưỡng)
 ├── eval/eval_asr_models.py     # Benchmark ASR per-segment: Whisper|Qwen|Nemotron (self-contained, chạy được venv_nemo)
 ├── eval/compare_asr_3models.py # In bảng so sánh 3 model từ outputs/asr_*.json (không cần GPU)
 │
@@ -182,7 +182,7 @@ diarization/
 |--------|-----------|----------|
 | **create_ground_truth.py** | `python create_ground_truth.py test/ --language vi [--strategy offline\|online] [--force]` | tạo `ground_truth/*.json` draft → sửa tay → đổi `annotation_status: reviewed` |
 | **eval/evaluate.py** | `python eval/evaluate.py test/ --language vi [--compare-qwen] --output outputs/eval_results.json` | DER + WER + CER cho pipeline Whisper (và Qwen nếu `--compare-qwen`) |
-| **eval/eval_phase3.py** | `python eval/eval_phase3.py test/ --language vi --min-asr 1.0 --output outputs/phase3_eval.json` | Đánh giá Phase 3 streaming end-to-end: DER + WER/CER + ASR coverage |
+| **eval/eval_streaming.py** | `python eval/eval_streaming.py test/ --language vi --min-asr 1.0 --output outputs/streaming_eval.json` | Đánh giá streaming end-to-end: DER + WER/CER + ASR coverage |
 
 ### 4) So sánh chiến lược & model
 
@@ -191,7 +191,7 @@ diarization/
 | **eval/compare_diarization.py** | `python eval/compare_diarization.py test/ --window 6 --step 1 --threshold 0.70 --output outputs/diar_11files_w6.json` | Offline (pyannote raw) vs Online (streaming) — DER vs GT |
 | **eval/sweep_online.py** | `python eval/sweep_online.py test/ --windows 4 6 9 --thresholds 0.70 0.80 --step 1 --output outputs/sweep_online.json` | tìm window×threshold tối ưu (in BEST) |
 | **eval/adaptive_window.py** | `python eval/adaptive_window.py test/ --windows 4 6 9 --output outputs/adaptive_window.json` | chọn window per-file GT-free (offline-agreement); in adaptive vs oracle vs fixed |
-| **eval/sweep_phase3.py** | `python eval/sweep_phase3.py test/ --language vi --min-asr 1.0 1.5 2.0 --output outputs/phase3_sweep.json` | quét ngưỡng `min_asr` (WER vs coverage) |
+| **eval/sweep_streaming.py** | `python eval/sweep_streaming.py test/ --language vi --min-asr 1.0 1.5 2.0 --output outputs/streaming_sweep.json` | quét ngưỡng `min_asr` (WER vs coverage) |
 | **eval/eval_asr_models.py** | `python eval/eval_asr_models.py test/ --model whisper --language vi --output outputs/asr_whisper.json`<br>`python eval/eval_asr_models.py test/ --model qwen --language vi --output outputs/asr_qwen.json` | benchmark ASR thuần (cắt theo GT segment), WER/CER/RTF |
 | **eval/compare_asr_3models.py** | `python eval/compare_asr_3models.py` | in bảng so sánh Whisper/Qwen/Nemotron từ `outputs/asr_*.json` (không GPU) |
 
@@ -266,7 +266,7 @@ flowchart TD
 
 **So sánh hai chiến lược:**
 
-| | Offline pipeline | Streaming end-to-end (phase3) |
+| | Offline pipeline | Streaming end-to-end |
 |---|---|---|
 | DER (11 file) | 14.72% (raw) / 9.55% (pipeline) | **11.57%** |
 | WER (Whisper) | **11.84%** | 19.25% (per-turn streaming) |
@@ -275,7 +275,7 @@ flowchart TD
 | Latency first output | chờ hết file | **~0.9s** |
 | Dùng khi | cần transcript chính xác nhất | real-time / live |
 
-*Streaming (phase3 dùng `stream_online()`) đạt DER 11.57% ≈ online-batch 11.67% — diarization streaming tốt nhất, thắng 7/11 file. WER cao hơn offline (mất ngữ cảnh xuyên turn) nhưng chạy real-time (RTF 0.97x). Chi tiết: [REPORT.md](REPORT.md) mục 6.5.*
+*Streaming end-to-end (dùng `stream_online()`) đạt DER 11.57% ≈ online-batch 11.67% — diarization streaming tốt nhất, thắng 7/11 file. WER cao hơn offline (mất ngữ cảnh xuyên turn) nhưng chạy real-time (RTF 0.97x). Chi tiết: [REPORT.md](REPORT.md) mục 6.5.*
 
 ### Speaker Diarization
 [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) phân tích audio để xác định *ai nói lúc nào* (không nhận dạng từ ngữ). Output: danh sách turns `{speaker, start, end}`.

@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
 Pipeline offline: speaker diarization (+ ASR tuỳ chọn).
-Gộp phase1_diarization (--asr none) + phase2_asr_diarization (--asr whisper)
-+ phase2_qwen_asr (--asr qwen).
+Một entry point cho inference offline; chọn bộ ASR qua --asr none|whisper|qwen.
 
 Usage (chạy từ thư mục gốc dự án):
     # Chỉ diarization

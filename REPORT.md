@@ -58,9 +58,9 @@ flowchart TD
 | Offline pipeline (pyannote + Whisper word-align) | 9.55% | **11.84%** | — | ~1.3x | batch |
 | Online diarization-only fixed w6 (chunk=6s, batch) | 11.67% | — | **~0.17x** | — | — |
 | **Online adaptive per-file window (offline-agreement)** | **9.65%** | — | ~0.5x* | — | — |
-| **Streaming end-to-end — phase3 (chunk=6s + Whisper)** | 11.57% | 19.25% | — | **0.97x** | **~0.9s** |
+| **Streaming end-to-end (chunk=6s + Whisper)** | 11.57% | 19.25% | — | **0.97x** | **~0.9s** |
 
-*Trung bình trên 11 file GT reviewed. **Online vẫn là chiến lược streaming tốt nhất** — fixed w6 DER 11.67% vs offline raw 14.72%, thắng 7/11 file (mục 6.2); **adaptive per-file window (chọn window GT-free) hạ xuống 9.65%** ≈ offline pipeline, vượt mọi window cố định (mục 6.1). Pipeline offline cho WER thấp nhất (11.84%) nhờ ngữ cảnh full-audio + word-timestamp; streaming end-to-end (phase3) chạy real-time (RTF 0.97x) đổi lại WER cao hơn (19.25%, mục 6.5).*
+*Trung bình trên 11 file GT reviewed. **Online vẫn là chiến lược streaming tốt nhất** — fixed w6 DER 11.67% vs offline raw 14.72%, thắng 7/11 file (mục 6.2); **adaptive per-file window (chọn window GT-free) hạ xuống 9.65%** ≈ offline pipeline, vượt mọi window cố định (mục 6.1). Pipeline offline cho WER thấp nhất (11.84%) nhờ ngữ cảnh full-audio + word-timestamp; streaming end-to-end chạy real-time (RTF 0.97x) đổi lại WER cao hơn (19.25%, mục 6.5).*
 
 > *Adaptive RTF ~0.5x do chạy offline tham chiếu + nhiều window để chọn; nếu chỉ chạy window đã chọn thì ~0.17x. Streaming end-to-end (diarization + ASR real-time) **đã tích hợp** trong `pipelines/pipeline_streaming.py` (dùng chung `stream_online()` + Whisper per-turn): output `{speaker, start, end, text}`, DER 11.57% · WER 19.25% · RTF 0.97x — xem **mục 6.5**.
 
@@ -116,16 +116,16 @@ diarization/
 ├── core/utils.py               # load_audio, load_models, whisper/qwen_transcribe, compute_der, load_gt, iter_wavs
 │
 │  ── pipelines/ — entry points inference ──────────────────────
-├── pipelines/pipeline.py            # Offline diarization (+ASR): --asr none|whisper|qwen  [gộp phase1/2/qwen]
+├── pipelines/pipeline.py            # Offline diarization (+ASR): --asr none|whisper|qwen
 ├── pipelines/pipeline_streaming.py  # Streaming ASR+diar real-time; --no-asr = chỉ diarization
 │
 │  ── eval/ — evaluation & comparison ─────────────────────────
 ├── eval/evaluate.py            # Pipeline offline vs GT: DER, WER, CER (+Qwen tùy chọn)
-├── eval/eval_phase3.py         # Streaming end-to-end vs GT: DER + WER/CER + coverage
+├── eval/eval_streaming.py         # Streaming end-to-end vs GT: DER + WER/CER + coverage
 ├── eval/compare_diarization.py # Offline vs online diarization (DER vs GT)
 ├── eval/sweep_online.py        # Quét window × threshold (load model 1 lần)
 ├── eval/adaptive_window.py     # Chọn window per-file GT-free (offline-agreement) → 9.65%
-├── eval/sweep_phase3.py        # Quét min_asr cho Phase 3
+├── eval/sweep_streaming.py        # Quét min_asr cho streaming
 ├── eval/eval_asr_models.py     # Benchmark ASR per-segment Whisper|Qwen|Nemotron (self-contained)
 ├── eval/compare_asr_3models.py # In bảng 3 model từ outputs/asr_*.json (không GPU)
 │
@@ -144,7 +144,7 @@ diarization/
 | `eval/evaluate.py` | Đầy đủ nhất: chạy pipeline offline + so sánh GT + tùy chọn Qwen3 | Đánh giá chất lượng có GT |
 | `eval/eval_asr_models.py` | Benchmark ASR thuần per-segment (Whisper/Qwen/Nemotron) | So WER các model trên cùng audio |
 | `eval/compare_diarization.py` | Offline vs Online diarization, có GT | Đánh giá chiến lược diarization |
-| `pipelines/pipeline.py --asr none\|whisper\|qwen` | Inference offline 1 file | Chạy thực tế (gộp phase1/2/qwen cũ) |
+| `pipelines/pipeline.py --asr none\|whisper\|qwen` | Inference offline 1 file | Chạy thực tế (diarization + ASR) |
 
 ---
 
@@ -388,9 +388,9 @@ emit_fi = new_emit_fi
 
 **Ghost speaker removal** (batch mode only): Nếu registry tạo ra >N speaker, `limit_speakers()` merge speaker có tổng duration ngắn nhất vào người hàng xóm thường xuyên nhất.
 
-### 6.5 Đánh giá Phase 3 — streaming end-to-end (diarization + ASR)
+### 6.5 Đánh giá streaming end-to-end (diarization + ASR)
 
-*`pipelines/pipeline_streaming.py` đã refactor để dùng chung `stream_online()` (cùng thuật toán đã benchmark). Mỗi turn ổn định: turn ≥ `min_asr` (1.0s) → Whisper nhận dạng; turn ngắn hơn → in `"..."` (bỏ ASR, tránh hallucinate); turn < 0.3s bị loại (nhiễu biên). Đo bằng `eval_phase3.py` trên 11 file, config chunk=6s/step=1s/threshold=0.70.*
+*`pipelines/pipeline_streaming.py` đã refactor để dùng chung `stream_online()` (cùng thuật toán đã benchmark). Mỗi turn ổn định: turn ≥ `min_asr` (1.0s) → Whisper nhận dạng; turn ngắn hơn → in `"..."` (bỏ ASR, tránh hallucinate); turn < 0.3s bị loại (nhiễu biên). Đo bằng `eval_streaming.py` trên 11 file, config chunk=6s/step=1s/threshold=0.70.*
 
 | File | DER | WER (e2e) | CER | ASR coverage | RTF |
 |------|----:|----:|----:|:----:|----:|
@@ -409,7 +409,7 @@ emit_fi = new_emit_fi
 
 **Nhận xét:**
 - **Diarization khớp chuẩn:** DER 11.57% ≈ online-batch 11.67% (mục 6.2) — refactor dùng `stream_online()` tái lập đúng thuật toán (per-file gần như trùng: test06 5.16=5.16, test07 5.57=5.57, test09 35.82=35.82).
-- **ASR streaming xếp giữa:** WER 19.25% nằm giữa **offline pipeline 11.84%** (mục 5.1, full-audio + word-timestamp) và **per-GT-segment 23.47%** (mục 5.2). Lý do: phase3 gộp turn cùng speaker → cho Whisper nhiều ngữ cảnh hơn per-segment, nhưng vẫn kém full-audio (mất ngữ cảnh xuyên turn).
+- **ASR streaming xếp giữa:** WER 19.25% nằm giữa **offline pipeline 11.84%** (mục 5.1, full-audio + word-timestamp) và **per-GT-segment 23.47%** (mục 5.2). Lý do: streaming gộp turn cùng speaker → cho Whisper nhiều ngữ cảnh hơn per-segment, nhưng vẫn kém full-audio (mất ngữ cảnh xuyên turn).
 - **`min_asr` không phải nguyên nhân chính của WER:** ASR coverage 99.15% (chỉ 0.85% thời lượng bị bỏ thành `"..."`) → WER chủ yếu là lỗi ASR thật + hallucinate ở turn 1–1.5s, không phải do bỏ turn ngắn.
 - **Real-time được:** RTF 0.97x (< 1, nhanh hơn real-time) nhờ bỏ ASR turn ngắn + gộp turn (giảm số lần gọi Whisper). Latency emit ≈ chunk × RTF ≈ 0.9s.
 - Cùng pattern với mục 6.3: test03 DER giảm còn 14.74% sau khi vá GT (residual do hội thoại lệch 90/10), test04/test09 diarization fail (online over-merge — cần w9/adaptive).

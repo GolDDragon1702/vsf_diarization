@@ -57,9 +57,9 @@ Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Yellow
 Write-Host "  1. Activate venv    : .\venv\Scripts\Activate.ps1"
 Write-Host "  2. Set HF token     : copy .env.example .env  (then edit .env)"
-Write-Host "  3. Run Phase 1      : python phase1_diarization.py video.mp4"
-Write-Host "  4. Run Phase 2      : python phase2_asr_diarization.py video.mp4 --language vi"
-Write-Host "  5. Run Phase 3      : python phase3_streaming.py --source video.mp4"
+Write-Host "  3. Offline (ASR)    : python pipelines/pipeline.py video.mp4 --asr whisper --language vi"
+Write-Host "  4. Offline (diar)   : python pipelines/pipeline.py video.mp4 --asr none --num-speakers 2"
+Write-Host "  5. Streaming        : python pipelines/pipeline_streaming.py --source video.mp4 --language vi"
 Write-Host ""
 Write-Host "Verify GPU availability:" -ForegroundColor Gray
 Write-Host "  python -c ""import torch; print(torch.cuda.is_available())"""

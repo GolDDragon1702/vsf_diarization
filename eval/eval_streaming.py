@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Đánh giá Phase 3 (streaming diarization + ASR) vs ground truth.
+Đánh giá streaming end-to-end (diarization + ASR) vs ground truth.
 
-Chạy đúng pipeline streaming của phase3_streaming.run_stream() (stream_online +
+Chạy đúng pipeline streaming của pipeline_streaming.run_stream() (stream_online +
 Whisper per-turn, turn ngắn < min_asr → "..."), rồi đo:
-  - DER  : chất lượng diarization streaming (so với 13.81% online batch ở REPORT 6.3)
+  - DER  : chất lượng diarization streaming (so với online batch ở REPORT mục 6.2)
   - WER/CER end-to-end : transcript streaming vs GT — turn "..." tính là deletion
   - ASR coverage : % thời lượng speech được nhận dạng (turn ≥ min_asr)
 
-Usage:
-  python eval_phase3.py test/ --language vi --min-asr 1.0 --output outputs/phase3_eval.json
+Usage (chạy từ thư mục gốc dự án):
+  python eval/eval_streaming.py test/ --language vi --min-asr 1.0 --output outputs/streaming_eval.json
 """
 
 import argparse
@@ -32,7 +32,7 @@ from pipelines.pipeline_streaming import run_stream
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Đánh giá Phase 3 streaming vs GT")
+    ap = argparse.ArgumentParser(description="Đánh giá streaming end-to-end vs GT")
     ap.add_argument("input", nargs="+", help="WAV file(s) hoặc folder")
     ap.add_argument("--hf-token")
     ap.add_argument("--whisper-model", default="turbo")
@@ -90,7 +90,7 @@ def main():
     if results:
         def m(x): return round(sum(x) / len(x), 2) if x else None
         print(f"\n{'='*60}")
-        print(f"  PHASE 3 — TRUNG BÌNH ({len(results)} file)")
+        print(f"  STREAMING END-TO-END — TRUNG BÌNH ({len(results)} file)")
         print(f"    DER          : {m(agg['der'])}%   (online batch ref: 13.81%)")
         print(f"    WER (e2e)    : {m(agg['wer'])}%   (offline pipeline ref: 11.84%)")
         print(f"    CER (e2e)    : {m(agg['cer'])}%")
