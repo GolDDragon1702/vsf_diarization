@@ -1,0 +1,27 @@
+# Secrets
+.env
+
+# Virtual environments
+venv/
+venv_nemo/
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Tool / model caches
+.cache/
+.sixth/
+.claude/
+
+# Audio data (lớn ~74M)
+*.wav
+*.mp3
+*.m4a
+*.flac
+
+# Dữ liệu nhạy cảm — transcript hội thoại y tế thật (KHÔNG public)
+ground_truth/
+outputs/

@@ -1,0 +1,15 @@
+# Core models
+pyannote.audio>=3.1.0
+faster-whisper>=1.0.0
+
+# PyTorch - install separately per your CUDA version
+# CPU:  pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+# CUDA: pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Audio I/O
+soundfile>=0.12.0
+sounddevice>=0.4.6      # Phase 3 microphone input
+numpy>=1.24.0
+
+# Utilities
+python-dotenv>=1.0.0
