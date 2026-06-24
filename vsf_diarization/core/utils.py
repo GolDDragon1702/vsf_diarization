@@ -110,10 +110,16 @@ def load_diarization_pipeline(hf_token: str):
     return pipeline
 
 
-def load_whisper(model_name: str = "turbo"):
+def load_whisper(model_name: str = "turbo", compute_type: str | None = None):
+    """Load faster-whisper.
+
+    compute_type mặc định (None) = int8_float16 trên GPU (nhanh ~2.6× vs float16,
+    RTF 0.48x, đổi lại WER +~2% — xem REPORT mục 7). Truyền 'float16' để ưu tiên
+    độ chính xác tối đa (WER thấp nhất)."""
     from faster_whisper import WhisperModel
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    compute_type = "float16" if device == "cuda" else "int8"
+    if compute_type is None:
+        compute_type = "int8_float16" if device == "cuda" else "int8"
     return WhisperModel(model_name, device=device, compute_type=compute_type)
 
 

@@ -149,6 +149,7 @@ def main():
     ap.add_argument("--source", default="mic", help="'mic' hoặc đường dẫn file audio/video")
     ap.add_argument("--hf-token")
     ap.add_argument("--whisper-model", default="turbo")
+    ap.add_argument("--compute-type", help="Whisper: 'float16' (chính xác hơn) | mặc định int8_float16 (nhanh ~2.6×)")
     ap.add_argument("--language", help="Mã ngôn ngữ, vd 'vi'")
     ap.add_argument("--chunk", type=float, default=6.0, help="Cửa sổ (s) — latency ≈ chunk × RTF")
     ap.add_argument("--step", type=float, default=1.0, help="Bước trượt (s)")
@@ -165,7 +166,7 @@ def main():
     hf_token = get_hf_token(args.hf_token)
     print("Loading models …")
     pipeline = load_diarization_pipeline(hf_token)
-    whisper = None if args.no_asr else load_whisper(args.whisper_model)
+    whisper = None if args.no_asr else load_whisper(args.whisper_model, args.compute_type)
 
     if args.source == "mic":
         data = record_mic()

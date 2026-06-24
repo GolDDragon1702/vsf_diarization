@@ -426,19 +426,22 @@ emit_fi = new_emit_fi
 | ASR + Diarization | offline Whisper turbo | **1.07–2.15x (mean ~1.3x)** | batch |
 | ASR + Diarization | offline Qwen3-ASR-1.7B | ~3–4x | batch |
 
-> RTF < 1 = nhanh hơn real-time. Diarization nhanh hơn real-time ~7–10x. Whisper là bottleneck (RTF 1.1–1.6x trên GTX 1650 — chậm hơn real-time), cần GPU mạnh hơn cho ứng dụng live.
+> RTF < 1 = nhanh hơn real-time. Diarization nhanh hơn real-time ~7–10x. Whisper là bottleneck. **Mặc định hiện tại dùng `int8_float16`** (real-time được, RTF 0.48x) — xem trade-off bên dưới.
 
-**Thử giảm RTF — kết quả âm tính (đo trên test01/test03):** mọi cấu hình nhanh hơn đều đánh đổi WER quá nhiều, nên **giữ turbo + float16 + beam_size=5** làm mặc định.
+### 7.1 Giảm RTF — int8_float16 (mặc định) vs float16
 
-| Cấu hình | RTF (test03) | WER test01 / test03 | Ghi chú |
+**Đo full 11 file** (turbo, beam5): int8_float16 **nhanh 2.6× (RTF 1.24x → 0.48x, xuống dưới real-time)** đổi lấy **+2% WER**. Suy giảm tập trung ở test01/test03; 9 file còn lại gần như không đổi, test05 còn tốt hơn.
+
+| Metric (mean 11 file) | float16 (`--compute-type float16`) | **int8_float16 (mặc định)** | Δ |
 |---|---:|---:|---|
-| **turbo float16 beam5 (mặc định)** | ~1.17x | **2.12% / 19.63%** | điểm tối ưu accuracy |
-| `BatchedInferencePipeline` (batch=8) | ~0.99x | 21.69% / 28.07% | re-segment VAD phá word-alignment; GPU 4GB không batch song song nhiều |
-| `beam_size=1` (greedy) | nhiễu | 9.52% / 29.32% | turbo+tiếng Việt nhạy với beam search |
-| `compute_type=int8_float16` | **~0.38x** | 17.99% / 28.70% | nhanh 3–4× nhưng **bỏ sót speech** (test01 miss 16%) |
-| model `small` (float16) | ~0.32x | 29.10% / 39.50% | WER tiếng Việt kém hẳn |
+| **RTF** | 1.24x | **0.48x** | **🟢 nhanh 2.6×** |
+| WER | **11.84%** | 13.92% | +2.08 |
+| DER | **9.55%** | 11.08% | +1.53 |
+| CER | **9.28%** | 10.32% | +1.05 |
 
-> Pipeline **bị chặn bởi GPU**: turbo+float16 đã là sweet-spot trên GTX 1650. Để giảm RTF mà giữ accuracy → cần GPU mạnh hơn (RTF tỉ lệ nghịch compute). Nếu chấp nhận WER cao hơn cho real-time, `--whisper-model small` / `int8_float16` là lựa chọn có sẵn (không đặt mặc định).
+> **Mặc định = int8_float16** (ưu tiên tốc độ/real-time). Dùng `--compute-type float16` cho độ chính xác tối đa (WER 11.84%). Các bảng chi tiết ở **mục 5–6 đo ở float16** (accuracy mode).
+>
+> **Các hướng đã loại** (đo test01/test03): `beam_size=1` (WER 9.5/29.3, RTF không ổn định — turbo tiếng Việt nhạy beam); `BatchedInferencePipeline` (WER 21.7/28.1 — re-segment VAD phá word-alignment, GPU 4GB không batch nhiều); model `small` (WER 29.1/39.5 — kém hẳn). int8_float16 là trade-off tốt nhất.
 
 ---
 

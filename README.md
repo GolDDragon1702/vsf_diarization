@@ -9,15 +9,15 @@ Chạy trên GPU CUDA (NVIDIA GTX 1650+) hoặc CPU.
 
 | Metric | Giá trị |
 |--------|---------|
-| WER (Word Error Rate) | **11.84%** |
-| CER (Character Error Rate) | **9.28%** |
+| WER (Word Error Rate) | **11.84%** (float16) · 13.92% (int8 mặc định) |
+| CER (Character Error Rate) | **9.28%** (float16) · 10.32% (int8) |
 | DER — online adaptive per-file window | **9.65%** ← tốt nhất (GT-free) |
 | DER — online streaming fixed w6 (chunk=6s) | 11.67% (thắng 7/11) |
 | DER — offline (pyannote raw, full-audio) | 14.72% |
 | RTF diarization streaming | **~0.17x** (latency ~0.9s) |
-| RTF full pipeline (ASR + diarization) | ~1.07–2.15x (mean ~1.3x) |
+| RTF full pipeline (ASR + diarization) | **~0.48x** (int8 mặc định) · ~1.3x (float16) |
 
-*Trung bình trên 11 file ground truth đã reviewed (test01–test11, ~877s hội thoại tiếng Việt), GPU GTX 1650. Online streaming thắng 7/11 file; adaptive per-file window (`adaptive_window.py`, chọn window không cần nhãn) hạ DER xuống 9.65%. Chi tiết: [REPORT.md](REPORT.md).*
+*Trung bình trên 11 file ground truth đã reviewed (test01–test11, ~877s hội thoại tiếng Việt), GPU GTX 1650. Online streaming thắng 7/11 file; adaptive per-file window hạ DER xuống 9.65%. **Whisper mặc định chạy `int8_float16`** (RTF 0.48x, real-time) — dùng `--compute-type float16` cho WER thấp nhất 11.84% (chậm hơn ~2.6×, xem [REPORT.md](REPORT.md) mục 7.1).*
 
 ---
 
@@ -203,6 +203,7 @@ docker run --gpus all -e HF_TOKEN=hf_xxx \
 | Tham số | Mặc định | Mô tả |
 |---------|----------|-------|
 | `--whisper-model` | `turbo` | Kích thước Whisper: tiny, base, small, medium, large-v3, turbo |
+| `--compute-type` | `int8_float16` | `float16` cho WER thấp nhất (chậm ~2.6×, RTF 1.3x); mặc định int8 nhanh (RTF 0.48x, WER +2%) |
 | `--language` | auto | Mã ngôn ngữ: `vi`, `en`, `zh`, ... |
 | `--num-speakers` | auto | Gợi ý số người nói (giúp tăng DER) |
 | `--compare-qwen` | off | (vsf-evaluate) Chạy thêm Qwen3-ASR để so sánh |

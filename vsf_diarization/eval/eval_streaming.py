@@ -34,6 +34,7 @@ def main():
     ap.add_argument("input", nargs="+", help="WAV file(s) hoặc folder")
     ap.add_argument("--hf-token")
     ap.add_argument("--whisper-model", default="turbo")
+    ap.add_argument("--compute-type", help="Whisper: 'float16' (chính xác hơn) | mặc định int8_float16 (nhanh ~2.6×)")
     ap.add_argument("--language", default="vi")
     ap.add_argument("--chunk", type=float, default=6.0)
     ap.add_argument("--step", type=float, default=1.0)
@@ -48,7 +49,7 @@ def main():
 
     print("Loading models …")
     pipeline = load_diarization_pipeline(get_hf_token(args.hf_token))
-    whisper = load_whisper(args.whisper_model)
+    whisper = load_whisper(args.whisper_model, args.compute_type)
     print(f"chunk={args.chunk}s step={args.step}s thr={args.threshold} min_asr={args.min_asr}s\n")
 
     results = []

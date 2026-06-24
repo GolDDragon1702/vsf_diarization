@@ -113,6 +113,7 @@ def main():
     parser.add_argument("input", nargs="+", help="WAV file(s) or folder")
     parser.add_argument("--hf-token")
     parser.add_argument("--whisper-model", default="turbo")
+    parser.add_argument("--compute-type", help="Whisper: 'float16' (chính xác hơn) | mặc định int8_float16 (nhanh ~2.6×)")
     parser.add_argument("--language")
     parser.add_argument("--num-speakers", type=int)
     parser.add_argument("--compare-qwen", action="store_true",
@@ -127,7 +128,7 @@ def main():
     hf_token = get_hf_token(args.hf_token)
     print("\nLoading models...")
     diar_pipeline = load_diarization_pipeline(hf_token)
-    whisper = load_whisper(args.whisper_model)
+    whisper = load_whisper(args.whisper_model, args.compute_type)
     qwen = None
     if args.compare_qwen:
         from utils import load_qwen_asr

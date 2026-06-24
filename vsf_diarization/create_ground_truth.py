@@ -88,6 +88,7 @@ def main():
     parser.add_argument("input", nargs="+", help="WAV file(s) or folder")
     parser.add_argument("--hf-token")
     parser.add_argument("--whisper-model", default="turbo")
+    parser.add_argument("--compute-type", help="Whisper: 'float16' (chính xác hơn) | mặc định int8_float16 (nhanh ~2.6×)")
     parser.add_argument("--language")
     parser.add_argument("--strategy", choices=["online", "offline"], default="offline",
                         help="Diarization strategy (offline cho draft chi tiết nhất)")
@@ -105,7 +106,7 @@ def main():
     hf_token = get_hf_token(args.hf_token)
     print("Loading models...")
     diar_pipeline = load_diarization_pipeline(hf_token)
-    whisper = load_whisper(args.whisper_model)
+    whisper = load_whisper(args.whisper_model, args.compute_type)
     print(f"Models loaded. Strategy: {args.strategy}\n")
 
     for wav in wav_files:

@@ -37,6 +37,7 @@ def main():
     ap.add_argument("--language")
     ap.add_argument("--num-speakers", type=int)
     ap.add_argument("--whisper-model", default="turbo")
+    ap.add_argument("--compute-type", help="Whisper: 'float16' (chính xác hơn) | mặc định int8_float16 (nhanh ~2.6×)")
     ap.add_argument("--qwen-model", default="Qwen/Qwen3-ASR-1.7B")
     ap.add_argument("--output")
     args = ap.parse_args()
@@ -46,7 +47,7 @@ def main():
 
     print("Loading models …")
     pipeline = load_diarization_pipeline(hf_token)
-    whisper = load_whisper(args.whisper_model) if args.asr == "whisper" else None
+    whisper = load_whisper(args.whisper_model, args.compute_type) if args.asr == "whisper" else None
     qwen = load_qwen_asr(args.qwen_model) if args.asr == "qwen" else None
 
     data = load_audio(audio_path)
