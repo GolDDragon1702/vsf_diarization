@@ -1,6 +1,6 @@
 # Báo cáo: Hệ thống Diarization + ASR Tiếng Việt
 
-> Cập nhật lần cuối: 2026-06-22 (sửa lỗi timestamp GT test03 + thêm adaptive per-file window; 11 file reviewed test01–test11, ~877s)
+> Cập nhật lần cuối: 2026-06-25 (đóng gói package `vsf_diarization` + Whisper mặc định int8_float16). Đánh giá trên **toàn bộ folder `test/`** (ground truth đã reviewed).
 
 ---
 
@@ -26,7 +26,7 @@ flowchart TD
         direction TB
         O1["pyannote/speaker-diarization-3.1\n(full audio, 1 lần)"]
         O2["merge_segments\n(lọc < 0.3s · gộp gap < 0.5s)"]
-        O3["faster-whisper turbo\n(word_timestamps=True · vad_filter=True)"]
+        O3["faster-whisper turbo\n(int8_float16 mặc định · word_timestamps · vad_filter)"]
         O4["speaker_at + merge_text_segments\n(gán speaker theo midpoint · gộp gap ≤ 1s)"]
         O1 --> O2 --> O3 --> O4
     end
@@ -41,7 +41,7 @@ flowchart TD
         S1 --> S2 --> S3 --> S4 --> S5
     end
 
-    OUT_OFF(["speaker · start · end · text\nDER 9.55% · WER 11.84% · RTF ~1.3x"])
+    OUT_OFF(["speaker · start · end · text\nint8 (mặc định): WER 13.92% · RTF 0.48x\nfloat16: WER 11.84% · RTF ~1.3x"])
     OUT_STR(["speaker · start · end\nDER 11.67% · RTF ~0.14x · latency ~0.9s"])
 
     INPUT --> O1
@@ -50,7 +50,7 @@ flowchart TD
     S5 --> OUT_STR
 ```
 
-**So sánh hai chiến lược (đo trên 11 file GT reviewed test01–test11, ~877s):**
+**So sánh các chiến lược (đo trên toàn bộ folder `test/` đã reviewed):**
 
 | Chiến lược | DER | WER | RTF diarization | RTF full pipeline | Latency output |
 |---|---:|---:|---:|---:|---|
@@ -60,9 +60,11 @@ flowchart TD
 | **Online adaptive per-file window (offline-agreement)** | **9.65%** | — | ~0.5x* | — | — |
 | **Streaming end-to-end (chunk=6s + Whisper)** | 11.57% | 19.25% | — | **0.97x** | **~0.9s** |
 
-*Trung bình trên 11 file GT reviewed. **Online vẫn là chiến lược streaming tốt nhất** — fixed w6 DER 11.67% vs offline raw 14.72%, thắng 7/11 file (mục 6.2); **adaptive per-file window (chọn window GT-free) hạ xuống 9.65%** ≈ offline pipeline, vượt mọi window cố định (mục 6.1). Pipeline offline cho WER thấp nhất (11.84%) nhờ ngữ cảnh full-audio + word-timestamp; streaming end-to-end chạy real-time (RTF 0.97x) đổi lại WER cao hơn (19.25%, mục 6.5).*
+> ⚙️ **Số WER/RTF trong bảng đo ở `float16` (accuracy mode).** Mặc định Whisper chạy **`int8_float16`** (nhanh ~2.6×): offline WER **13.92%** · RTF **0.48x**; streaming WER **19.79%** · RTF **0.65x** — xem **mục 7.1**. Dùng `--compute-type float16` để có số float16. Phần diarization (DER) không phụ thuộc compute_type.
 
-> *Adaptive RTF ~0.5x do chạy offline tham chiếu + nhiều window để chọn; nếu chỉ chạy window đã chọn thì ~0.17x. Streaming end-to-end (diarization + ASR real-time) **đã tích hợp** trong `vsf-stream` (`pipeline_streaming.py`, dùng chung `stream_online()` + Whisper per-turn): output `{speaker, start, end, text}`, DER 11.57% · WER 19.25% · RTF 0.97x — xem **mục 6.5**.
+*Trung bình trên toàn bộ folder test. **Online là chiến lược diarization tốt nhất** — fixed w6 DER 11.67% vs offline raw 14.72%, thắng đa số (mục 6.2); **adaptive per-file window (chọn window GT-free) hạ xuống 9.65%** ≈ offline pipeline, vượt mọi window cố định (mục 6.1). Pipeline offline cho WER thấp nhất (11.84% float16) nhờ ngữ cảnh full-audio + word-timestamp; streaming end-to-end chạy real-time đổi lại WER cao hơn (mục 6.5).*
+
+> *Adaptive RTF ~0.5x do chạy offline tham chiếu + nhiều window để chọn; nếu chỉ chạy window đã chọn thì ~0.17x. Streaming end-to-end (diarization + ASR real-time) **đã tích hợp** trong `vsf-stream` (`pipeline_streaming.py`, dùng chung `stream_online()` + Whisper per-turn): output `{speaker, start, end, text}` — xem **mục 6.5**.
 
 ---
 
@@ -157,7 +159,7 @@ ground_truth/ · test/ · outputs/  # dữ liệu runtime (.gitignore)
 
 ## 5. Đánh giá ASR — Whisper turbo vs Qwen3-ASR-1.7B
 
-*Đo trên 11 file ground truth đã reviewed: test01–test11 (tổng ~877s hội thoại tiếng Việt). Diarization: pyannote offline + gán speaker theo word-timestamp của Whisper, num_speakers từ GT.*
+*Đo trên toàn bộ folder `test/` (ground truth đã reviewed). Diarization: pyannote offline + gán speaker theo word-timestamp của Whisper, num_speakers từ GT. **Bảng 5.1 đo ở `float16` (accuracy mode)** — runtime mặc định là `int8_float16` (nhanh 2.6×, WER +2%, mục 7.1).*
 
 ### 5.1 Whisper turbo (pyannote + faster-whisper turbo)
 
@@ -174,21 +176,17 @@ ground_truth/ · test/ · outputs/  # dữ liệu runtime (.gitignore)
 | test09.wav | 94s | 7.67% | 0.0% | 2.9% | 4.8% | 19.67% | 13.55% | 1.31x |
 | test10.wav | 52s | **0.00%** | 0.0% | 0.0% | 0.0% | 1.97% | 1.48% | 1.14x |
 | test11.wav | 49s | **0.00%** | 0.0% | 0.0% | 0.0% | 4.14% | 1.29% | 1.19x |
-| **Trung bình** | ~877s | **9.55%** | — | — | — | **11.84%** | **9.28%** | **~1.3x** |
+| **Trung bình (float16)** | toàn bộ | **9.55%** | — | — | — | **11.84%** | **9.28%** | **~1.3x** |
+| **Trung bình (int8 mặc định)** | toàn bộ | **11.08%** | — | — | — | **13.92%** | **10.32%** | **0.48x** |
 
 > Đây là DER của **pipeline đầy đủ** (pyannote + gán speaker per-word của Whisper). test08/10/11 đạt DER 0% vì là monologue / hội thoại rõ ràng + word-align làm sạch biên. Lưu ý DER này thấp hơn DER của **pyannote thô** (mục 6.2) do bước gán lại theo word-timestamp.
 
-> **test02 & test07** — DER cao (32.79% / 29.36%) hầu hết là Confusion (~30%): clustering toàn cục của pyannote tách nhầm 2 giọng giống nhau. Online streaming sửa được cả hai (mục 6.2).
-
-> **test03** — DER giảm mạnh **33.14% → 7.30%** sau khi sửa **lỗi timestamp trong GT**: 1 segment SPEAKER_00 (`"Bố mẹ nói…"`) ghi nhầm `start=106.7` (trùng start segment trước đó 73s) trong khi `end=195.8`, khiến SPEAKER_00 tự overlap ~73s → đẩy Miss giả lên ~28.7%. Sửa `start=180.0`. WER 19.63% giữ nguyên (text không đổi). Audio test03 thực ra diarize tốt — không phải lỗi audio như nghi vấn ban đầu.
-
-> **test05** — WER 33.44%, CER 34.77%: nội dung có nhiều thuật ngữ chuyên môn hoặc phát âm khác biệt khiến Whisper nhận nhầm nhiều. DER 14.26% chủ yếu do FA 6.84%.
-
-> ⚠️ Báo cáo các bản trước ghi Mean WER 3.36% (3 file) / 12.41% (6 file) — đều chỉ đúng cho subset. Trên bộ **11 file test01–11**, Mean WER thực là **11.84%**, Mean CER **9.28%**.
+> **test02 & test07** — DER cao (32.79% / 29.36%) chủ yếu là Confusion: clustering toàn cục của pyannote tách nhầm 2 giọng giống nhau; online streaming sửa được (mục 6.2).
+> **test05** — WER 33.44%: nội dung chuyên môn / phát âm khác biệt khiến Whisper nhận nhầm nhiều.
 
 ### 5.2 Benchmark ASR có kiểm soát — Whisper vs Qwen3 vs Nemotron 3.5
 
-*Cập nhật 2026-06-18 (11 file test01–test11). Phương pháp: cắt audio theo **đúng ranh giới segment trong ground truth** rồi đưa từng đoạn cho model — mọi model thấy audio giống hệt với ranh giới lý tưởng, nên WER/CER đo **chất lượng nhận dạng thuần**, tách khỏi diarization. Khác với mục 5.1 (Whisper full-audio qua pyannote turns). Script: `eval_asr_models.py --model {whisper,qwen,nemotron}`.*
+*Đo trên toàn bộ folder test. Phương pháp: cắt audio theo **đúng ranh giới segment trong ground truth** rồi đưa từng đoạn cho model — mọi model thấy audio giống hệt với ranh giới lý tưởng, nên WER/CER đo **chất lượng nhận dạng thuần**, tách khỏi diarization. Khác với mục 5.1 (Whisper full-audio qua pyannote turns). Script: `eval.eval_asr_models --model {whisper,qwen,nemotron}` (benchmark này chạy float16).*
 
 | Model | Params | Mean WER | Mean CER | Mean RTF | Thắng/11 |
 |-------|-------:|---------:|---------:|---------:|:-------:|
@@ -213,24 +211,14 @@ ground_truth/ · test/ · outputs/  # dữ liệu runtime (.gitignore)
 | test11 | 1 | **6.51%** | 11.83% | Whisper |
 | **Trung bình** | — | 23.47% † | **18.46%** † | **Qwen 8/11** |
 
-> † **test03 pre-fix:** số đo per-segment này lấy trước khi vá lỗi timestamp GT. Segment lỗi cắt 89s audio (106.7→195.8) nhưng chỉ khớp ~16s text → insertion khổng lồ, thổi WER test03 lên 77/70% và kéo cả mean lên. ASR thực của test03 phản ánh đúng hơn ở **full-audio WER 19.63%** (mục 5.1). Chưa re-chạy per-segment cho test03 (Qwen chậm); mean sau khi vá sẽ thấp hơn 23.47/18.46.
+> † **test03 pre-fix:** số per-segment đo trước khi vá lỗi timestamp GT (cắt 89s audio vs ~16s text → insertion khổng lồ), thổi WER lên 77/70% và kéo mean lên. Mean thật sau vá sẽ thấp hơn 23.47/18.46.
 
-**Nhận xét điểm mạnh / điểm yếu:**
+**Nhận xét:**
+- **Qwen3-ASR** chính xác nhất trên đoạn ngắn isolated (WER 18.46%, thắng 8/11) nhưng chậm (RTF 1.11x) và **không có word timestamp** → không gán speaker word-level.
+- **Whisper turbo** yếu trên đoạn ngắn (per-segment 23.47%, hay hallucinate) nhưng **full-audio đạt 11.84%** (mục 5.1) nhờ ngữ cảnh dài, và có **word timestamp** → lựa chọn cho pipeline offline.
+- test03 † (77/70%) là do lỗi biên GT (đã vá), không phải model/audio.
 
-*Qwen3-ASR-1.7B — chính xác nhất trên đoạn ngắn isolated:*
-- Thắng 8/11 file, WER per-segment 18.46% (thấp hơn Whisper ~5 điểm). Đặc biệt mạnh ở file nhiều turn ngắn / hội thoại nhanh (test04 18.33% vs Whisper 31.27%; test07 8.56% vs 17.57%).
-- **Điểm yếu:** chậm (RTF 1.11x > 1, model 1.7B), **không có word timestamp** → không gán speaker theo từng từ được (phải gán per-segment), không phù hợp pipeline diarization word-level.
-
-*Whisper turbo — mạnh khi có ngữ cảnh dài, yếu trên đoạn ngắn:*
-- Per-segment chỉ 23.47%, NHƯNG **full-audio (mục 5.1) đạt 11.84%** — Whisper khai thác ngữ cảnh dài rất tốt. Khi cắt thành đoạn ngắn isolated, Whisper hay hallucinate (test08 monologue: vad=True cứu từ 27% xuống 18.79%). Thắng ở file 1 segment dài (test10/test11).
-- **Điểm mạnh quyết định cho pipeline:** có **word timestamp** → gán speaker theo midpoint từng từ (mục 2.2), nhanh nhất (RTF ~1.0–1.3x). Đây là lý do pipeline offline dùng Whisper.
-
-*test03 — số fail (Whisper 77.27%, Qwen 70.19%) là do LỖI GT, không phải model/audio:*
-- Cùng thủ phạm với diarization: lỗi timestamp khiến 1 GT segment cắt 89s audio nhưng chỉ có ~16s text → khi benchmark per-segment, model "đọc" cả 89s nhưng bị chấm với 16s text → insertion error khổng lồ. **Đã vá** (start 106.7→180.0). Full-audio WER test03 chỉ 19.63% (mục 5.1) → audio + model đều ổn. Bài học: per-segment benchmark cực nhạy với lỗi biên GT.
-
-**Kết luận chọn model:**
-- **Pipeline đầy đủ (diarization + transcript): Whisper turbo** vẫn tốt nhất — full-audio WER 11.84%, có word timestamp để gán speaker, nhanh.
-- **Nếu chỉ cần ASR per-utterance: Qwen3-ASR** chính xác hơn (18.46% vs 23.47%), đổi lại chậm hơn và không có word timestamp.
+**Chọn model:** pipeline đầy đủ → **Whisper turbo** (word timestamp + nhanh); chỉ cần ASR per-utterance → **Qwen3-ASR** (WER thấp hơn nhưng chậm, không timestamp).
 
 **Khuyến nghị cho streaming (ưu tiên độ trễ thấp + xử lý theo chunk):**
 
@@ -242,11 +230,10 @@ ground_truth/ · test/ · outputs/  # dữ liệu runtime (.gitignore)
 | Word timestamp (gán speaker incremental) | tùy | ❌ | ✅ |
 | Chạy trên Windows | ❌ (cần Linux/WSL) | ✅ | ✅ |
 
-- **Lựa chọn lý tưởng cho streaming: Nemotron-3.5-streaming-0.6b** — đây là model *duy nhất thiết kế gốc cho cache-aware streaming* (latency có thể chỉnh 80ms–1s), nhỏ nhất (0.6B → kỳ vọng RTF < 1, nhanh hơn cả Qwen/Whisper). **Cần chạy trên Linux/WSL** (mục 8.1) để đo và tích hợp.
-- **Lựa chọn khả dụng ngay (Windows): Whisper turbo** cho streaming pipeline — RTF ~1.0 + **word timestamp** cho phép emit `(speaker, text)` incremental cùng `stream_online()`. Đổi lại WER đoạn ngắn cao hơn Qwen.
-- Qwen3 chính xác hơn per-chunk nhưng RTF > 1 và thiếu word timestamp → ít phù hợp low-latency streaming dù WER thấp hơn.
+- **Nemotron-3.5-0.6b** — model *duy nhất thiết kế gốc cache-aware streaming* (latency 80ms–1s), nhỏ nhất → kỳ vọng nhanh nhất. **Chưa chạy được trên Windows** (mục 8.1).
+- **Whisper turbo** — khả dụng ngay, có **word timestamp** cho emit `(speaker, text)` incremental; đổi lại WER đoạn ngắn cao hơn Qwen. Qwen3 WER thấp hơn nhưng RTF > 1 + thiếu word timestamp.
 
-> ⚠️ **Nemotron-3.5-ASR-Streaming-0.6B — chưa benchmark được trên Windows.** Model (NVIDIA, 06/2026, hỗ trợ vi-VN, kiến trúc FastConformer cache-aware RNNT + prompt) **cài và load thành công** trên Windows (sau khi: cài NeMo từ `git@main` để có class `EncDecRNNTBPEModelWithPrompt`, và ép lại torch/torchaudio **cu128** vì NeMo kéo về bản CPU làm hỏng `libtorchaudio.pyd`). Tuy nhiên **đường inference `transcribe()` của NeMo hỏng trên Windows native**: input numpy → decode rỗng; input file → lỗi khóa file manifest tạm (`PermissionError WinError 32`) + plumbing prompt hướng-training. Adapter đã viết đúng API (`target_lang="vi-VN"`) trong `eval_asr_models.py`, **chạy được trên Linux/WSL**. Xem mục 8.1 để biết hướng chạy.
+> ⚠️ **Nemotron chưa benchmark được trên Windows native** — NeMo `transcribe()` lỗi (numpy→rỗng / khóa manifest `WinError 32`). Adapter đã viết đúng API (`target_lang="vi-VN"`), chạy được trên Linux/WSL — xem mục 8.1.
 
 ---
 
@@ -254,18 +241,18 @@ ground_truth/ · test/ · outputs/  # dữ liệu runtime (.gitignore)
 
 ### 6.1 Tinh chỉnh hyper-parameter online (window × threshold)
 
-Quét đầy đủ 6 cấu hình `window ∈ {4, 6, 9}s × threshold ∈ {0.70, 0.80}` trên cả **11 file** (step=1s, num_speakers từ GT). Script `sweep_online.py` load pipeline một lần và tái sử dụng cho mọi cấu hình.
+Quét đầy đủ 6 cấu hình `window ∈ {4, 6, 9}s × threshold ∈ {0.70, 0.80}` trên **toàn bộ folder test** (step=1s, num_speakers từ GT). Script `eval.sweep_online` load pipeline một lần và tái sử dụng cho mọi cấu hình. *(Diarization thuần — không phụ thuộc compute_type Whisper.)*
 
 | window | threshold | **mean DER** | mean Confusion | Ghi chú |
 |-------:|----------:|-------------:|---------------:|---------|
-| **9s** | **0.70** | **10.53%** | 6.93% | **Tối ưu (accuracy) trên bộ 11 file** |
+| **9s** | **0.70** | **10.53%** | 6.93% | **Tối ưu (accuracy) trên bộ test** |
 | 6s | 0.70 | 11.67% | 8.18% | Default streaming (latency thấp ~0.9s) |
 | 9s | 0.80 | 14.86% | 11.28% | threshold 0.80 gây over-split |
 | 4s | 0.70 | 15.58% | 12.63% | Window quá ngắn → confusion tăng |
 | 4s | 0.80 | 15.60% | 12.62% | — |
 | 6s | 0.80 | 16.94% | 13.42% | threshold 0.80 thảm họa |
 
-**Kết luận tinh chỉnh:** trên bộ **11 file** (sau khi sửa GT test03), `window=9s, threshold=0.70` là cấu hình cố định **chính xác nhất** (10.53%), vượt `window=6s` (11.67%). Lý do: **2 file fail ở w6** (test04, test09) được w9 sửa, kéo trung bình về phía w9. Threshold 0.80 luôn tệ hơn.
+**Kết luận tinh chỉnh:** trên bộ test, `window=9s, threshold=0.70` là cấu hình cố định **chính xác nhất** (10.53%), vượt `window=6s` (11.67%). Lý do: **2 file fail ở w6** (test04, test09) được w9 sửa, kéo trung bình về phía w9. Threshold 0.80 luôn tệ hơn.
 
 > ⚠️ **Trade-off cho streaming:** w9 chính xác hơn nhưng **latency cao hơn** (≈ chunk × RTF ≈ 9×0.15 ≈ **1.35s** vs w6 ≈ **0.9s**). Vì ưu tiên streaming là độ trễ thấp, **default vẫn giữ w6** (0.9s, DER 11.67%); dùng **w9 khi chạy batch/cần độ chính xác cao nhất** (10.53%).
 
@@ -291,7 +278,7 @@ Quét đầy đủ 6 cấu hình `window ∈ {4, 6, 9}s × threshold ∈ {0.70, 
 
 | Chiến lược chọn window | mean DER | Ghi chú |
 |---|---:|---|
-| **Adaptive (offline-agreement, GT-free)** | **9.65%** | chọn đúng oracle 7/11 file; vượt mọi window cố định |
+| **Adaptive (offline-agreement, GT-free)** | **9.65%** | chọn đúng oracle 7/11; vượt mọi window cố định |
 | Oracle (cheat — min theo GT) | 8.26% | trần lý thuyết |
 | Fixed w9 (tốt nhất cố định) | 10.53% | |
 | Fixed w6 (default) | 11.67% | |
@@ -302,7 +289,7 @@ Quét đầy đủ 6 cấu hình `window ∈ {4, 6, 9}s × threshold ∈ {0.70, 
 
 ### 6.2 Kết quả cuối: Offline vs Online streaming (default streaming w6)
 
-*So sánh diarization thuần (không ASR): offline = pyannote raw turns; online = chunk=**6s** (default streaming, latency ~0.9s), step=1s, threshold=0.70, majority voting 50ms. num_speakers từ GT. Đo trên 11 file GT reviewed (test01–test11). Lưu ý: w9 hạ online mean DER xuống **10.53%**, adaptive per-file xuống **9.65%** (mục 6.1) nhưng latency/chi phí cao hơn.*
+*So sánh diarization thuần (không ASR): offline = pyannote raw turns; online = chunk=**6s** (default streaming, latency ~0.9s), step=1s, threshold=0.70, majority voting 50ms. num_speakers từ GT. Đo trên toàn bộ folder test. Lưu ý: w9 hạ online mean DER xuống **10.53%**, adaptive per-file xuống **9.65%** (mục 6.1) nhưng latency/chi phí cao hơn.*
 
 | File | Duration | avg turn | Offline DER | Online DER | Winner |
 |------|------:|------:|----:|----:|:---:|
@@ -317,44 +304,32 @@ Quét đầy đủ 6 cấu hình `window ∈ {4, 6, 9}s × threshold ∈ {0.70, 
 | test09 | 94s | 3.8s | 10.53% | 35.82% | **Offline** |
 | test10 | 52s | 25.8s | 1.47% | **0.16%** | Online |
 | test11 | 49s | 49.2s | 0.17% | **0.09%** | Online |
-| **Trung bình** | ~877s | — | **14.72%** | **11.67%** | **Online 7/11** |
+| **Trung bình** | toàn bộ | — | **14.72%** | **11.67%** | **Online 7/11** |
 
 | Metric | Offline (pyannote raw) | Online streaming (chunk=6s) |
 |--------|:-----------------:|:-------------------:|
-| **DER mean (11 file)** | 14.72% | **11.67%** |
+| **DER mean (folder test)** | 14.72% | **11.67%** |
 | — Miss mean | 5.12% | **1.66%** |
 | — False Alarm mean | 3.07% | **1.82%** |
 | — Confusion mean | **6.53%** | 8.18% |
 | **RTF mean** | **~0.09x** | ~0.17x |
 | Wall-clock latency | N/A (batch) | ~chunk × RTF ≈ 0.9s |
-| Online wins / tổng | — | **7/11 file** |
+| Online wins / tổng | — | **7/11** |
 
 ### 6.3 Phân tích
 
-**Kết quả tổng thể (11 file):** Online streaming vẫn là **chiến lược diarization tốt nhất** — mean DER 11.67% vs offline raw 14.72% (giảm ~21% tương đối), thắng **7/11 file**. Online giảm mạnh Miss (1.66% vs 5.12%) và False Alarm (1.82% vs 3.07%), nhưng **Confusion cao hơn** (8.18% vs 6.53%) — bị kéo bởi 2 ca fail (test04, test09).
+**Online thắng 7/11** (mean DER 11.67% vs offline raw 14.72%, −21% tương đối): giảm mạnh Miss (1.66 vs 5.12) + FA (1.82 vs 3.07), nhưng Confusion cao hơn (8.18 vs 6.53) do 2 ca fail.
 
-**Vì sao online thắng — hai cơ chế chính:**
+**Vì sao online thắng:**
+- *Tránh clustering toàn cục (test02/07):* offline gom cụm toàn file → 2 giọng giống nhau bị gán sai (conf ~30%); online chỉ phân biệt trong cửa sổ 6s → DER còn 2.47/5.57%.
+- *Giảm Miss nhờ cửa sổ chồng lấp (test05/08):* ~6 cửa sổ bầu mỗi frame → ít bỏ sót (test08 monologue: offline 22.57% → online 8.77%).
 
-*1. Tránh lỗi clustering toàn cục (test02, test07):* pyannote offline gom cụm trên toàn file → khi 2 giọng giống nhau, nó tách nhầm rồi gán sai (test02 conf 32%, test07 conf 29% → DER ~33%). Online chỉ phân biệt trong từng cửa sổ 6s nơi embedding nhất quán → DER giảm còn 2.47%/5.57%.
+**Các ca offline thắng:**
+- *test04 & test09:* 2 giọng bị pyannote map nhầm embedding trong cửa sổ 6s → confusion vọt (avg turn ngắn không đủ giải thích — test01/05/08 cũng ngắn mà online thắng). **w9 / adaptive sửa được** (mục 6.1).
+- *test03:* hội thoại mất cân bằng (SPEAKER_01 chỉ 10%, toàn backchannel < 0.5s) → majority-vote nuốt mất → online 15.35% vs offline 8.97%. Giới hạn thật của streaming với hội thoại lệch.
+- *test06:* online mở ghost speaker thoáng qua → 5.16% vs 2.58%.
 
-*2. Giảm Miss nhờ cửa sổ chồng lấp (test05, test08):* mỗi frame được ~6 cửa sổ "bầu" nên ít bị bỏ sót. test08 (monologue 74s): offline DER 22.57% (miss nhiều) trong khi online phủ gần đủ → 8.77%.
-
-**Các ca offline thắng (test03, test04, test06, test09):**
-
-*test04 & test09 — online fail nặng (32.63% vs 15.68%; 35.82% vs 10.53%), confusion tăng vọt:*
-- Cả hai có avg turn ngắn (~3.6–3.8s) + talk-time lệch: online gán nhầm danh tính 2 giọng ở một số cửa sổ 6s → confusion cao.
-- ⚠️ **avg turn ngắn KHÔNG đủ giải thích:** test01 (3.5s), test05 (4.0s), test08 (3.9s) cũng turn ngắn nhưng online **thắng**. Yếu tố quyết định là *2 giọng trong test04/test09 bị pyannote map nhầm embedding trong cửa sổ ngắn* — tăng window lên 9s giảm được lỗi này (mục 6.1) nhưng hại file khác → cần adaptive per-file.
-
-*test03 (197s) — đã sửa được phần lớn nhờ vá lỗi GT:*
-- Trước đây cả hai đều ~34–39% với **Miss ~29% cố định ở mọi window** — dấu hiệu artifact GT chứ không phải thuật toán. Kiểm tra xác nhận: offline pyannote phủ 193.7/193.8s speech (chỉ sót 0.9s) → **audio diarize tốt**, không phải lỗi audio. Thủ phạm là **lỗi timestamp**: 1 segment SPEAKER_00 ghi `start=106.7` (đúng phải `180.0`), tự overlap ~73s → Miss giả. Sửa xong: **offline 8.97%, online 15.35%**.
-- Online (15.35%) vẫn kém offline (8.97%) ở file này do **mất cân bằng cực đoan** (SPEAKER_00 90% vs SPEAKER_01 10%, toàn backchannel < 0.5s — có 8 segment < 0.3s): majority-vote trên cửa sổ 6s nuốt mất các backchannel ngắn của người nói phụ → confusion 12.9%. Đây là giới hạn thật của streaming với hội thoại lệch, không còn là lỗi GT.
-
-*test06 — online tạo ghost speaker thoáng qua → DER 5.16% (vs offline 2.58%):*
-- registry mở ID giả ở một đoạn ngắn; tăng window không giúp.
-
-**Kết luận:**
-- **Online là chiến lược mặc định tốt nhất** ở `window=6s, threshold=0.70`: thắng 7/11, mạnh ở file clustering khó (test02/test07) lẫn monologue (test08/10/11).
-- Offline nhỉnh hơn ở 4 ca biên (test03 hội thoại lệch 90/10 + backchannel ngắn; test04/test09 cần window lớn hơn; test06 ghost thoáng qua) — phần lớn sửa được bằng **adaptive per-file window** (mục 6.1), trừ test03 cần xử lý riêng cho hội thoại mất cân bằng.
+**Kết luận:** online (w6) là mặc định tốt nhất; offline nhỉnh ở 4 ca biên, phần lớn sửa được bằng **adaptive per-file** (mục 6.1) trừ test03.
 
 ### 6.4 Lý giải thuật toán stream_online() (frame-level majority voting + generator)
 
@@ -389,7 +364,7 @@ emit_fi = new_emit_fi
 
 ### 6.5 Đánh giá streaming end-to-end (diarization + ASR)
 
-*`vsf-stream` (`pipeline_streaming.py`) dùng chung `stream_online()` (cùng thuật toán đã benchmark). Mỗi turn ổn định: turn ≥ `min_asr` (1.0s) → Whisper nhận dạng; turn ngắn hơn → in `"..."` (bỏ ASR, tránh hallucinate); turn < 0.3s bị loại (nhiễu biên). Đo bằng `eval_streaming.py` trên 11 file, config chunk=6s/step=1s/threshold=0.70.*
+*`vsf-stream` (`pipeline_streaming.py`) dùng chung `stream_online()` (cùng thuật toán đã benchmark). Mỗi turn ổn định: turn ≥ `min_asr` (1.0s) → Whisper nhận dạng; turn ngắn hơn → in `"..."` (bỏ ASR, tránh hallucinate); turn < 0.3s bị loại (nhiễu biên). Đo bằng `vsf-eval-streaming` trên toàn bộ folder test, config chunk=6s/step=1s/threshold=0.70. **Bảng đo ở float16 (accuracy mode)**; mặc định int8 cho WER cao hơn ~2% (mục 7.1).*
 
 | File | DER | WER (e2e) | CER | ASR coverage | RTF |
 |------|----:|----:|----:|:----:|----:|
@@ -404,35 +379,37 @@ emit_fi = new_emit_fi
 | test09 | 35.82% | 24.86% | 17.67% | 99.6% | 0.83x |
 | test10 | 0.16% | 2.96% | 2.17% | 100% | 0.58x |
 | test11 | 0.09% | 4.73% | 1.67% | 100% | 0.47x |
-| **Trung bình** | **11.57%** | **19.25%** | **14.89%** | **99.15%** | **0.97x** |
+| **Trung bình (float16)** | **11.57%** | **19.25%** | **14.89%** | **99.15%** | **0.97x** |
+| **Trung bình (int8 mặc định)** | 11.57% | 19.79% | 15.41% | 99.15% | 0.65x |
 
 **Nhận xét:**
 - **Diarization khớp chuẩn:** DER 11.57% ≈ online-batch 11.67% (mục 6.2) — refactor dùng `stream_online()` tái lập đúng thuật toán (per-file gần như trùng: test06 5.16=5.16, test07 5.57=5.57, test09 35.82=35.82).
 - **ASR streaming xếp giữa:** WER 19.25% nằm giữa **offline pipeline 11.84%** (mục 5.1, full-audio + word-timestamp) và **per-GT-segment 23.47%** (mục 5.2). Lý do: streaming gộp turn cùng speaker → cho Whisper nhiều ngữ cảnh hơn per-segment, nhưng vẫn kém full-audio (mất ngữ cảnh xuyên turn).
 - **`min_asr` không phải nguyên nhân chính của WER:** ASR coverage 99.15% (chỉ 0.85% thời lượng bị bỏ thành `"..."`) → WER chủ yếu là lỗi ASR thật + hallucinate ở turn 1–1.5s, không phải do bỏ turn ngắn.
-- **Real-time được:** RTF 0.97x (< 1, nhanh hơn real-time) nhờ bỏ ASR turn ngắn + gộp turn (giảm số lần gọi Whisper). Latency emit ≈ chunk × RTF ≈ 0.9s.
-- Cùng pattern với mục 6.3: test03 DER giảm còn 14.74% sau khi vá GT (residual do hội thoại lệch 90/10), test04/test09 diarization fail (online over-merge — cần w9/adaptive).
+- **Real-time được:** RTF 0.97x (float16) / **0.65x (int8 mặc định)** — đều < 1, nhanh hơn real-time, nhờ bỏ ASR turn ngắn + gộp turn (giảm số lần gọi Whisper). int8 chỉ tăng WER +0.5 ở streaming (nhẹ hơn offline +2 vì per-turn ngắn). Latency emit ≈ chunk × RTF ≈ 0.9s.
+- Cùng pattern diarization (mục 6.3): test03 residual do hội thoại lệch; test04/test09 fail (cần w9/adaptive).
 
 ---
 
 ## 7. Benchmark RTF tổng thể (CUDA GTX 1650)
 
-*Đo trên 11 file GT reviewed (2026-06-18, GPU rảnh hoàn toàn). RTF dao động giữa các lần chạy tùy power state của GPU và nội dung file — ghi giá trị đo được dạng khoảng.*
+*Đo trên toàn bộ folder test (GPU rảnh hoàn toàn). RTF dao động giữa các lần chạy tùy power state của GPU và nội dung file — ghi giá trị đo được dạng khoảng.*
 
 | Task | Mode | RTF (đo được) | Wall latency |
 |------|------|---:|---|
 | Diarization only | offline pyannote | **~0.08x** | batch |
 | Diarization streaming | online chunk=6s | **~0.14x (0.13–0.16)** | **~0.9s** |
-| ASR + Diarization | offline Whisper turbo | **1.07–2.15x (mean ~1.3x)** | batch |
+| ASR + Diarization | offline Whisper turbo **int8 (mặc định)** | **~0.48x** | batch |
+| ASR + Diarization | offline Whisper turbo float16 | 1.07–2.15x (mean ~1.3x) | batch |
 | ASR + Diarization | offline Qwen3-ASR-1.7B | ~3–4x | batch |
 
 > RTF < 1 = nhanh hơn real-time. Diarization nhanh hơn real-time ~7–10x. Whisper là bottleneck. **Mặc định hiện tại dùng `int8_float16`** (real-time được, RTF 0.48x) — xem trade-off bên dưới.
 
 ### 7.1 Giảm RTF — int8_float16 (mặc định) vs float16
 
-**Đo full 11 file** (turbo, beam5): int8_float16 **nhanh 2.6× (RTF 1.24x → 0.48x, xuống dưới real-time)** đổi lấy **+2% WER**. Suy giảm tập trung ở test01/test03; 9 file còn lại gần như không đổi, test05 còn tốt hơn.
+**Đo trên toàn bộ folder test** (turbo, beam5): int8_float16 **nhanh 2.6× (RTF 1.24x → 0.48x, xuống dưới real-time)** đổi lấy **+2% WER**. Suy giảm tập trung ở test01/test03; phần lớn file còn lại gần như không đổi, test05 còn tốt hơn.
 
-| Metric (mean 11 file) | float16 (`--compute-type float16`) | **int8_float16 (mặc định)** | Δ |
+| Metric (mean, folder test) | float16 (`--compute-type float16`) | **int8_float16 (mặc định)** | Δ |
 |---|---:|---:|---|
 | **RTF** | 1.24x | **0.48x** | **🟢 nhanh 2.6×** |
 | WER | **11.84%** | 13.92% | +2.08 |
@@ -452,8 +429,6 @@ emit_fi = new_emit_fi
 - [ ] Giảm WER nội dung chuyên môn (test05 ~33%): fine-tune Whisper / tích hợp LM hậu xử lý.
 
 ### 8.2 Diarization
-- [ ] Cải thiện adaptive cho test02/test07 (đang chọn w4 thay vì w9): dùng tín hiệu nội tại (entropy gán nhãn / tách biệt centroid registry) thay vì so offline.
-- [ ] Hội thoại mất cân bằng (test03): bảo vệ backchannel ngắn của người nói phụ khỏi bị majority-vote nuốt (hạ ngưỡng vote / VAD-aware).
 - [ ] Fine-tune pyannote embedding extractor trên giọng Việt (mục tiêu DER < 8%); Spectral Clustering cho > 2 người nói.
 
 ### 8.3 Streaming
@@ -469,11 +444,10 @@ emit_fi = new_emit_fi
 
 | Vấn đề | Mô tả | Mức độ |
 |--------|-------|--------|
-| RTF > 1 cho full pipeline | Whisper turbo trên GTX 1650: RTF 1.07–2.15x, biên ~1.3x — chậm hơn real-time | Cao |
 | Online (default w6) fail 2 ca biên | test04/test09: confusion tăng vọt ở window 6s; **adaptive per-file / w9 sửa được** nhưng default vẫn w6 | Trung bình |
-| test03 hội thoại mất cân bằng | SPEAKER_01 chỉ 10% (backchannel < 0.5s) → online nuốt mất, DER 15.35% (offline 8.97%) | Trung bình |
+| int8 mặc định tăng WER ~2% | đổi lấy RTF 0.48x (real-time); dùng `--compute-type float16` nếu cần WER thấp nhất | Thấp |
 | Nemotron chưa đo được trên Windows | NeMo transcribe() lỗi Windows native — cần Linux/WSL | Trung bình |
-| Mới 11 file GT reviewed | ~877s tổng (test01–11) | Thấp |
+| Bộ test còn nhỏ | folder test/ — cần mở rộng để kết luận chắc hơn | Thấp |
 
 ---
 
@@ -487,5 +461,3 @@ emit_fi = new_emit_fi
 [00:00:08.420 → 00:00:09.100]  SPEAKER_01 : <backchannel>
 ...
 ```
-
-> Transcript hội thoại thật đã được lược bỏ khỏi repo công khai vì lý do riêng tư (dữ liệu y tế). Ví dụ điển hình test01.wav đạt **WER 2.12%** — chỉ sai ~5 từ trên toàn bộ 46s.
