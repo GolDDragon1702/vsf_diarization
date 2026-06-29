@@ -3,7 +3,7 @@
 Pipeline nhận dạng giọng nói + phân biệt người nói (speaker diarization) cho tiếng Việt.  
 Chạy trên GPU CUDA (NVIDIA GTX 1650+) hoặc CPU.
 
-[![CI](https://github.com/GolDDragon1702/vsf_diarization/actions/workflows/ci.yml/badge.svg)](https://github.com/GolDDragon1702/vsf_diarization/actions/workflows/ci.yml)
+[![CI](https://github.com/GolDDragon1702/vsf_diarization/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/GolDDragon1702/vsf_diarization/actions/workflows/ci.yml?query=branch%3Amain)
 
 ---
 
