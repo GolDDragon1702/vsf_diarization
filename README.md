@@ -3,6 +3,8 @@
 Pipeline nhận dạng giọng nói + phân biệt người nói (speaker diarization) cho tiếng Việt.  
 Chạy trên GPU CUDA (NVIDIA GTX 1650+) hoặc CPU.
 
+[![CI](https://github.com/GolDDragon1702/vsf_diarization/actions/workflows/ci.yml/badge.svg)](https://github.com/GolDDragon1702/vsf_diarization/actions/workflows/ci.yml)
+
 ---
 
 ## Kết quả nhanh
@@ -17,7 +19,7 @@ Chạy trên GPU CUDA (NVIDIA GTX 1650+) hoặc CPU.
 | RTF diarization streaming | **~0.17x** (latency ~0.9s) |
 | RTF full pipeline (ASR + diarization) | **~0.48x** (int8 mặc định) · ~1.3x (float16) |
 
-*Trung bình trên 11 file ground truth đã reviewed (test01–test11, ~877s hội thoại tiếng Việt), GPU GTX 1650. Online streaming thắng 7/11 file; adaptive per-file window hạ DER xuống 9.65%. **Whisper mặc định chạy `int8_float16`** (RTF 0.48x, real-time) — dùng `--compute-type float16` cho WER thấp nhất 11.84% (chậm hơn ~2.6×, xem [REPORT.md](REPORT.md) mục 7.1).*
+*Trung bình trên toàn bộ folder `test/` đã reviewed (GPU GTX 1650). Online streaming thắng 7/11; adaptive per-file window hạ DER còn 9.65%. **Whisper mặc định `int8_float16`** (RTF 0.48x, real-time); dùng `--compute-type float16` cho WER thấp nhất 11.84% (chậm ~2.6×, [REPORT.md](REPORT.md) mục 7.1).*
 
 ---
 
@@ -75,10 +77,34 @@ vsf-diarize audio.wav --asr none    --num-speakers 2   # chỉ diarization (khô
 ### Streaming real-time
 
 ```bash
-vsf-stream --source mic                                # từ microphone
+vsf-stream --source mic --live --num-speakers 2        # mic real-time THẬT (in turn ngay khi nói)
+vsf-stream --source mic                                # mic: ghi tới Ctrl-C rồi xử lý
 vsf-stream --source audio.wav --language vi            # giả lập streaming từ file
 vsf-stream --source audio.wav --no-asr                 # chỉ diarization streaming
 ```
+
+### Server API + Web UI
+
+```bash
+pip install -e ".[serve]"                              # fastapi + uvicorn + gradio + prometheus
+vsf-serve                                              # → http://127.0.0.1:8000
+```
+
+Mở **http://127.0.0.1:8000/** để vào giao diện web: tải file *hoặc* ghi mic trực tiếp
+(real-time qua WebSocket), transcript hiện dạng bong bóng tô màu theo người nói, kèm
+dashboard giám sát các chỉ số.
+
+| Endpoint | Mô tả |
+|----------|-------|
+| `/` | **Giao diện web** (upload + mic real-time + dashboard) |
+| `POST /transcribe` | upload file audio → JSON `{turns:[{speaker,start,end,text}], rtf}` |
+| `WS /ws/stream` | gửi PCM float32 16kHz mono → nhận turn real-time (gửi `EOF` để chốt) |
+| `GET /health` · `GET /metrics` | health-check + thống kê JSON (device, avg RTF, #request) |
+| `GET /metrics/prometheus` | metrics chuẩn Prometheus (xem [monitoring/](monitoring/)) |
+| `/demo` | giao diện Gradio thay thế |
+
+Model load **một lần** rồi cache dùng chung ([serve/models.py](vsf_diarization/serve/models.py)).
+Mọi request được **log có cấu trúc**; metrics + Prometheus/Grafana: xem [monitoring/README.md](monitoring/README.md).
 
 ### Đánh giá chất lượng (cần ground truth)
 
@@ -96,7 +122,7 @@ vsf-evaluate test/ --language vi --output outputs/eval_results.json   # cả fol
 ```
 
 > Đánh giá & so sánh model/chiến lược: xem **[Bảng tra cứu: chạy từng script](#bảng-tra-cứu-chạy-từng-script)** bên dưới.
-> Tóm tắt ASR per-segment (11 file): **Qwen3-ASR 18.46% WER** (thắng 8/11) < **Whisper turbo 23.47%**; nhưng full-audio pipeline Whisper đạt **11.84%** nhờ ngữ cảnh dài + word timestamp.
+> Tóm tắt ASR per-segment: **Qwen3-ASR 18.46% WER** (thắng 8/11) < **Whisper turbo 23.47%**; nhưng full-audio pipeline Whisper đạt **11.84%** nhờ ngữ cảnh dài + word timestamp.
 
 ---
 
@@ -110,10 +136,18 @@ vsf_diarization/                    # ← Python package (pip install -e .)
 ├── core/utils.py               # load_audio · load_*models · whisper/qwen_transcribe · compute_der/asr · load_gt · iter_wavs
 ├── core/diarize_offline.py     # run_offline(): pyannote full-audio → (segments, elapsed)
 ├── core/diarize_online.py      # run_online() (batch) + stream_online() (generator): sliding window + majority vote
+├── core/streaming_session.py   # StreamingSession: engine real-time, feed audio chunk → turn (mic/WebSocket)
 │
 │  ── pipelines/ — inference (entry points) ───────────────────
 ├── pipelines/pipeline.py            # vsf-diarize : offline diarization (+ASR) --asr none|whisper|qwen
-├── pipelines/pipeline_streaming.py  # vsf-stream  : streaming real-time (mic/file); --no-asr = chỉ diarization
+├── pipelines/pipeline_streaming.py  # vsf-stream  : streaming real-time (mic/file); --live = mic thật; --no-asr
+│
+│  ── serve/ — REST/WebSocket API + web UI + observability (".[serve]") ──
+├── serve/api.py                # vsf-serve : FastAPI / · /transcribe · /ws/stream · /metrics(/prometheus) · /demo
+├── serve/static/               # frontend web (index.html · style.css · app.js) — upload + mic real-time + dashboard
+├── serve/demo.py               # Gradio UI thay thế (upload/mic → transcript tô màu)
+├── serve/models.py             # cache model (load 1 lần) + Metrics JSON
+├── serve/observability.py      # logging có cấu trúc + Prometheus metrics + middleware
 │
 │  ── eval/ — ground truth & đánh giá ──────────────────────────
 ├── eval/evaluate.py            # vsf-evaluate : DER + WER + CER vs GT (offline; +Qwen tùy chọn)
@@ -127,7 +161,10 @@ vsf_diarization/                    # ← Python package (pip install -e .)
 │
 └── create_ground_truth.py      # vsf-create-gt : tạo draft GT (annotate tay → reviewed)
 
-pyproject.toml                  # metadata + deps + entry points vsf-*
+tests/                          # unit test thuần (pytest, không cần GPU/model) — fake pipeline
+monitoring/                     # Prometheus + Grafana (docker-compose) giám sát /metrics/prometheus
+.github/workflows/ci.yml        # CI: cài torch CPU + chạy pytest mỗi push/PR
+pyproject.toml                  # metadata + deps + entry points vsf-* + extras [serve]/[dev]
 Dockerfile / .dockerignore      # image GPU CUDA 12.8
 run_nemotron.sh                 # Nemotron benchmark (WSL2)
 setup_venv.ps1                  # tạo venv + pip install -e . (PowerShell)
@@ -168,7 +205,7 @@ ground_truth/ · test/ · outputs/  # dữ liệu runtime (không trong package;
 
 | Module | Cú pháp | Mục đích |
 |--------|-----------|----------|
-| **eval.compare_diarization** | `python -m vsf_diarization.eval.compare_diarization test/ --window 6 --step 1 --threshold 0.70 --output outputs/diar_11files_w6.json` | Offline (pyannote raw) vs Online (streaming) — DER vs GT |
+| **eval.compare_diarization** | `python -m vsf_diarization.eval.compare_diarization test/ --window 6 --step 1 --threshold 0.70 --output outputs/diar_w6.json` | Offline (pyannote raw) vs Online (streaming) — DER vs GT |
 | **eval.sweep_online** | `python -m vsf_diarization.eval.sweep_online test/ --windows 4 6 9 --thresholds 0.70 0.80 --step 1 --output outputs/sweep_online.json` | tìm window×threshold tối ưu (in BEST) |
 | **eval.adaptive_window** | `python -m vsf_diarization.eval.adaptive_window test/ --windows 4 6 9 --output outputs/adaptive_window.json` | chọn window per-file GT-free (offline-agreement); in adaptive vs oracle vs fixed |
 | **eval.sweep_streaming** | `python -m vsf_diarization.eval.sweep_streaming test/ --language vi --min-asr 1.0 1.5 2.0 --output outputs/streaming_sweep.json` | quét ngưỡng `min_asr` (WER vs coverage) |
@@ -179,7 +216,7 @@ ground_truth/ · test/ · outputs/  # dữ liệu runtime (không trong package;
 
 ```bash
 # Trong WSL2 Ubuntu, tại thư mục project:
-bash run_nemotron.sh                                       # cài NeMo + chạy 11 file → outputs/asr_nemotron.json
+bash run_nemotron.sh                                       # cài NeMo + chạy toàn bộ test → outputs/asr_nemotron.json
 python -m vsf_diarization.eval.compare_asr_3models         # xem so sánh 3 model
 ```
 > Nemotron **không chạy được trên Windows native** (NeMo transcribe() lỗi: numpy decode rỗng / khóa manifest tạm). `run_nemotron.sh` tự cài `torch cu128 + nemo_toolkit[asr] git@main` trong WSL.
@@ -230,7 +267,7 @@ flowchart TD
         direction TB
         O1["pyannote/speaker-diarization-3.1\n(full audio, 1 lần)"]
         O2["merge_segments\n(lọc < 0.3s · gộp gap < 0.5s)"]
-        O3["faster-whisper turbo\n(word_timestamps=True)"]
+        O3["faster-whisper turbo\n(int8_float16 mặc định · word_timestamps)"]
         O4["speaker_at\n+ merge_text_segments"]
         O1 --> O2 --> O3 --> O4
     end
@@ -245,7 +282,7 @@ flowchart TD
         S1 --> S2 --> S3 --> S4 --> S5
     end
 
-    OUT_OFF(["speaker · start · end · text\nDER 9.55% · WER 11.84% · RTF ~1.3x"])
+    OUT_OFF(["speaker · start · end · text\nint8 (mặc định): WER 13.92% · RTF 0.48x\nfloat16: WER 11.84% · RTF ~1.3x"])
     OUT_STR(["speaker · start · end\nDER 11.67% · RTF ~0.17x · latency ~0.9s"])
 
     INPUT --> O1
@@ -258,14 +295,14 @@ flowchart TD
 
 | | Offline pipeline | Streaming end-to-end |
 |---|---|---|
-| DER (11 file) | 14.72% (raw) / 9.55% (pipeline) | **11.57%** |
-| WER (Whisper) | **11.84%** | 19.25% (per-turn streaming) |
-| RTF full pipeline | ~1.3x | **0.97x** (real-time) |
+| DER | 14.72% (raw) / 9.55% (pipeline) | **11.57%** |
+| WER (int8 mặc định) | **13.92%** · 11.84% (float16) | 19.79% · 19.25% (float16) |
+| RTF full pipeline (int8) | **0.48x** · ~1.3x (float16) | **0.65x** · 0.97x (float16) |
 | ASR coverage | 100% | 99.15% (turn ngắn → `...`) |
 | Latency first output | chờ hết file | **~0.9s** |
-| Dùng khi | cần transcript chính xác nhất | real-time / live |
+| Dùng khi | transcript chính xác nhất | real-time / live |
 
-*Streaming end-to-end (dùng `stream_online()`) đạt DER 11.57% ≈ online-batch 11.67% — diarization streaming tốt nhất, thắng 7/11 file. WER cao hơn offline (mất ngữ cảnh xuyên turn) nhưng chạy real-time (RTF 0.97x). Chi tiết: [REPORT.md](REPORT.md) mục 6.5.*
+*Streaming end-to-end (`stream_online()`) đạt DER 11.57% ≈ online-batch 11.67% — diarization tốt nhất, thắng 7/11. WER cao hơn offline (mất ngữ cảnh xuyên turn) nhưng real-time. Chi tiết: [REPORT.md](REPORT.md) mục 6.5.*
 
 ### Speaker Diarization
 [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) phân tích audio để xác định *ai nói lúc nào* (không nhận dạng từ ngữ). Output: danh sách turns `{speaker, start, end}`.
@@ -274,7 +311,7 @@ flowchart TD
 [faster-whisper turbo](https://github.com/SYSTRAN/faster-whisper) nhận dạng nội dung từng đoạn audio. Với `word_timestamps=True`, có thể gán từng từ vào đúng speaker theo midpoint của từng từ — chính xác hơn so với gán per-segment.
 
 ### Online Streaming (diart-style)
-Thay vì xử lý toàn bộ audio, pipeline trượt cửa sổ 6s theo bước 1s. Mỗi cửa sổ vote cho từng frame 50ms. Frame được gán speaker theo đa số vote, emit ngay khi frame ổn định (latency ~0.9s). Trên 11 file GT reviewed, online streaming fixed w6 đạt **DER 11.67% vs offline 14.72% — thắng 7/11 file**, nhờ (1) tránh lỗi clustering toàn cục khi hai giọng giống nhau (test02/test07: offline ~33% → online ~2-5%) và (2) giảm Miss nhờ cửa sổ chồng lấp. Window tối ưu phụ thuộc file (w6/w9 khác nhau) → `adaptive_window.py` chọn window per-file không cần nhãn (offline-agreement) hạ DER xuống **9.65%**, vượt mọi window cố định. Online chỉ thua ở vài ca biên (test04/test09 cần window lớn hơn — adaptive sửa được; test03 hội thoại lệch 90/10). Xem [REPORT.md](REPORT.md) để biết chi tiết.
+Trượt cửa sổ 6s/bước 1s; mỗi cửa sổ vote cho từng frame 50ms → gán speaker theo đa số vote, emit khi frame ổn định (latency ~0.9s). Online (w6) đạt **DER 11.67% vs offline 14.72%, thắng 7/11** nhờ (1) tránh clustering toàn cục khi 2 giọng giống nhau và (2) giảm Miss nhờ cửa sổ chồng lấp. Window tối ưu phụ thuộc file → `eval.adaptive_window` chọn window per-file không cần nhãn (offline-agreement) hạ DER còn **9.65%**. Chi tiết: [REPORT.md](REPORT.md) mục 6.
 
 ---
 
@@ -297,6 +334,17 @@ Thay vì xử lý toàn bộ audio, pipeline trượt cửa sổ 6s theo bước
 
 **`bad interpreter` / lỗi `\r`** khi chạy `run_nemotron.sh` trong WSL
 → File bị CRLF: `sed -i 's/\r$//' run_nemotron.sh` rồi chạy lại
+
+---
+
+## Test
+
+```bash
+pip install -e ".[dev]"     # pytest + httpx
+pytest                      # unit test thuần (không cần GPU/model/HF token)
+```
+
+CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) chạy bộ test này trên CPU cho mỗi push/PR.
 
 ---
 

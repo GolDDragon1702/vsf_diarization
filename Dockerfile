@@ -1,8 +1,10 @@
 # Vietnamese Speech Diarization & ASR — GPU image (CUDA 12.8)
 # Build : docker build -t vsf-diarization .
-# Run   : docker run --gpus all -e HF_TOKEN=hf_xxx \
+# CLI   : docker run --gpus all -e HF_TOKEN=hf_xxx \
 #           -v "$PWD/test:/app/test" -v "$PWD/outputs:/app/outputs" \
 #           vsf-diarization  vsf-diarize test/test01.wav --asr whisper --language vi
+# Server: docker run --gpus all -e HF_TOKEN=hf_xxx -p 8000:8000 \
+#           vsf-diarization  vsf-serve --host 0.0.0.0   # → /transcribe /ws/stream /demo
 FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -22,9 +24,10 @@ RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pyt
 # Cài package (copy tối thiểu để cache layer khi chỉ đổi code)
 COPY pyproject.toml README.md ./
 COPY vsf_diarization ./vsf_diarization
-RUN pip install --no-cache-dir .          # thêm ".[qwen]" nếu cần Qwen3-ASR
+RUN pip install --no-cache-dir ".[serve]"   # +REST/WS API & demo (thêm ",qwen" nếu cần Qwen3-ASR)
 
-# Console scripts (vsf-diarize / vsf-stream / vsf-evaluate / vsf-eval-streaming /
-# vsf-create-gt) nằm sẵn trên PATH. HF_TOKEN truyền lúc run qua -e.
+# Console scripts (vsf-diarize / vsf-stream / vsf-serve / vsf-evaluate /
+# vsf-eval-streaming / vsf-create-gt) nằm sẵn trên PATH. HF_TOKEN truyền lúc run qua -e.
 # Mount test/, ground_truth/, outputs/ làm volume khi chạy.
+EXPOSE 8000
 CMD ["bash"]

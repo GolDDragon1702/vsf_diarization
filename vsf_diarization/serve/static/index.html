@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VSF Diarization — Phân tách & nhận dạng giọng nói</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🎙️</span>
+      <div>
+        <h1>VSF Diarization</h1>
+        <p>Ai nói câu gì — tiếng Việt · pyannote + Whisper</p>
+      </div>
+    </div>
+    <div class="health" id="health"><span class="dot"></span><span id="healthText">đang kết nối…</span></div>
+  </header>
+
+  <main>
+    <!-- ── Bảng điều khiển ─────────────────────────────────────── -->
+    <section class="panel controls">
+      <div class="tabs">
+        <button class="tab active" data-mode="upload">📁 Tải file</button>
+        <button class="tab" data-mode="live">🔴 Ghi trực tiếp</button>
+      </div>
+
+      <div class="opts">
+        <label>Ngôn ngữ
+          <input id="lang" value="vi" />
+        </label>
+        <label>Số người nói
+          <input id="numspk" type="number" min="1" max="8" placeholder="auto" />
+        </label>
+      </div>
+
+      <!-- Upload -->
+      <div id="uploadPane" class="pane">
+        <div id="drop" class="dropzone">
+          <input id="file" type="file" accept="audio/*,video/*" hidden />
+          <div class="dz-inner">
+            <span class="dz-icon">⬆️</span>
+            <b>Kéo thả</b> hoặc <span class="link">chọn file</span> audio
+            <small id="fileName">wav · mp3 · m4a · mp4…</small>
+          </div>
+        </div>
+        <button id="analyze" class="btn primary" disabled>Phân tích</button>
+      </div>
+
+      <!-- Live -->
+      <div id="livePane" class="pane hidden">
+        <div class="mic-wrap">
+          <button id="micBtn" class="mic"><span class="mic-icon">🎤</span></button>
+          <canvas id="level" width="220" height="48"></canvas>
+          <div id="micState" class="mic-state">Nhấn để bắt đầu ghi</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Kết quả ─────────────────────────────────────────────── -->
+    <section class="panel result">
+      <div class="result-head">
+        <h2>Transcript</h2>
+        <div class="stats" id="stats"></div>
+      </div>
+      <div id="status" class="status hidden"></div>
+      <div id="transcript" class="transcript">
+        <div class="empty">Kết quả sẽ hiện ở đây…</div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ── Dashboard giám sát ───────────────────────────────────── -->
+  <section class="panel dashboard">
+    <div class="dash-head">
+      <h2>📊 Giám sát hệ thống</h2>
+      <a class="link" href="/metrics/prometheus" target="_blank">/metrics/prometheus ↗</a>
+    </div>
+    <div class="gauges" id="gauges"></div>
+  </section>
+
+  <footer>VSF Diarization · <a href="/docs" target="_blank">API docs</a> · <a href="/demo" target="_blank">Gradio</a></footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

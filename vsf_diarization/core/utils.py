@@ -212,6 +212,17 @@ def whisper_transcribe(
     return merge_text_segments(results), info.language
 
 
+def transcribe_turn(whisper, data: np.ndarray, start: float, end: float,
+                    language: str | None) -> str:
+    """Nhận dạng đoạn audio [start, end] bằng Whisper, trả về text.
+    vad_filter=True giảm hallucination trên đoạn ngắn / gần im lặng."""
+    sl = data[int(start * SAMPLE_RATE): int(end * SAMPLE_RATE)]
+    if len(sl) < int(0.2 * SAMPLE_RATE):
+        return ""
+    segs, _ = whisper.transcribe(sl, language=language, vad_filter=True)
+    return " ".join(s.text.strip() for s in segs).strip()
+
+
 _QWEN_LANG_MAP = {
     "vi": "Vietnamese", "en": "English", "zh": "Chinese",
     "ja": "Japanese", "ko": "Korean", "fr": "French", "de": "German",

@@ -17,6 +17,9 @@ Usage (chạy từ thư mục gốc dự án):
     # Từ microphone (ghi tới Ctrl-C rồi xử lý)
     python pipelines/pipeline_streaming.py --source mic --language vi
 
+    # Mic real-time THẬT (xử lý ngay khi nói, in turn liền)
+    python pipelines/pipeline_streaming.py --source mic --live --language vi --num-speakers 2
+
 Tham số streaming (giống stream_online):
     --chunk 6   cửa sổ (s); 6 = latency thấp ~0.9s, 9 = chính xác hơn nhưng ~1.35s
     --step 1    bước trượt (s)
@@ -32,24 +35,15 @@ import numpy as np
 
 from vsf_diarization.core.utils import (
     get_hf_token, get_audio_input, load_audio, load_diarization_pipeline,
-    load_whisper, fmt_time, SAMPLE_RATE,
+    load_whisper, transcribe_turn, fmt_time, SAMPLE_RATE,
 )
 from vsf_diarization.core.diarize_online import stream_online
 
 sys.stdout.reconfigure(encoding="utf-8")
 warnings.filterwarnings("ignore")
 
-
-# ── ASR cho một speaker-turn ───────────────────────────────────────────────────
-
-def transcribe_turn(whisper, data: np.ndarray, start: float, end: float, language: str | None) -> str:
-    """Nhận dạng đoạn audio [start, end] bằng Whisper, trả về text."""
-    sl = data[int(start * SAMPLE_RATE): int(end * SAMPLE_RATE)]
-    if len(sl) < int(0.2 * SAMPLE_RATE):
-        return ""
-    # vad_filter=True giảm hallucination của Whisper trên đoạn ngắn / gần im lặng.
-    segs, _ = whisper.transcribe(sl, language=language, vad_filter=True)
-    return " ".join(s.text.strip() for s in segs).strip()
+# transcribe_turn được giữ ở core/utils (dùng chung bởi serve + sweep_streaming);
+# re-export ở đây để giữ tương thích `from pipeline_streaming import transcribe_turn`.
 
 
 # ── Vòng lặp streaming ─────────────────────────────────────────────────────────
@@ -122,6 +116,40 @@ def run_stream_diar_only(data, pipeline, chunk_s, step_s, threshold,
 
 # ── Nguồn audio ────────────────────────────────────────────────────────────────
 
+def run_mic_live(pipeline, whisper, language, chunk_s, step_s, threshold,
+                 num_speakers, min_asr):
+    """Real-time mic: xử lý audio NGAY khi nói (vs record_mic ghi xong mới xử lý).
+    Mỗi block 0.5s được đẩy vào StreamingSession; turn nào ổn định thì in liền."""
+    import queue
+    import sounddevice as sd
+    from vsf_diarization.core.streaming_session import StreamingSession
+
+    session = StreamingSession(pipeline, whisper, chunk_s=chunk_s, step_s=step_s,
+                               threshold=threshold, num_speakers=num_speakers,
+                               language=language, min_asr=min_asr)
+    q: queue.Queue = queue.Queue()
+    block = int(0.5 * SAMPLE_RATE)
+    sd_stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1, blocksize=block,
+                               callback=lambda indata, *_: q.put(indata[:, 0].copy()))
+
+    def show(turn):
+        print(f"[{fmt_time(turn['start'])} -> {fmt_time(turn['end'])}]  "
+              f"{turn['speaker']}: {turn['text']}")
+
+    results = []
+    print(f"Real-time mic … nói đi (latency ≈ {chunk_s:.0f}s, Ctrl-C để dừng)\n")
+    with sd_stream:
+        try:
+            while True:
+                for turn in session.feed(q.get()):
+                    results.append(turn); show(turn)
+        except KeyboardInterrupt:
+            print("\nĐang chốt turn cuối …")
+    for turn in session.finalize():
+        results.append(turn); show(turn)
+    return results
+
+
 def record_mic() -> np.ndarray:
     """Ghi từ microphone tới khi Ctrl-C, trả về toàn bộ audio (16kHz mono)."""
     import queue
@@ -158,6 +186,8 @@ def main():
     ap.add_argument("--min-asr", type=float, default=1.0,
                     help="Turn ngắn hơn (s) sẽ in '...' thay vì nhận dạng (tránh hallucinate)")
     ap.add_argument("--realtime", action="store_true", help="Sleep theo step để giả lập nhịp real-time")
+    ap.add_argument("--live", action="store_true",
+                    help="Mic real-time thật: xử lý ngay khi nói (chỉ dùng với --source mic)")
     ap.add_argument("--no-asr", action="store_true",
                     help="Chỉ diarization streaming (không Whisper) — thay stream_diarization.py")
     ap.add_argument("--output", help="Lưu segment ra JSON")
@@ -167,6 +197,19 @@ def main():
     print("Loading models …")
     pipeline = load_diarization_pipeline(hf_token)
     whisper = None if args.no_asr else load_whisper(args.whisper_model, args.compute_type)
+
+    # Mic real-time thật — xử lý từng block ngay, không gom rồi mới chạy
+    if args.source == "mic" and args.live:
+        segs = run_mic_live(pipeline, whisper, args.language, args.chunk, args.step,
+                            args.threshold, args.num_speakers, args.min_asr)
+        if args.output:
+            import json
+            from pathlib import Path
+            Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+            with open(args.output, "w", encoding="utf-8") as f:
+                json.dump(segs, f, indent=2, ensure_ascii=False)
+            print(f"Saved -> {args.output}")
+        return
 
     if args.source == "mic":
         data = record_mic()

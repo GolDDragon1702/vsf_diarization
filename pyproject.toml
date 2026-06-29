@@ -28,6 +28,15 @@ dependencies = [
 
 [project.optional-dependencies]
 qwen = ["qwen-asr"]            # ASR Qwen3 (pip install -e ".[qwen]")
+serve = [                     # REST/WebSocket API + web UI + observability (pip install -e ".[serve]")
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "gradio>=4.0",
+    "python-multipart>=0.0.9",
+    "websockets>=12.0",
+    "prometheus-client>=0.20",
+]
+dev = ["pytest>=7.0", "httpx>=0.27"]   # chạy test: pip install -e ".[dev]" && pytest
 
 [project.urls]
 Repository = "https://github.com/GolDDragon1702/vsf_diarization"
@@ -38,6 +47,14 @@ vsf-stream         = "vsf_diarization.pipelines.pipeline_streaming:main"
 vsf-evaluate       = "vsf_diarization.eval.evaluate:main"
 vsf-eval-streaming = "vsf_diarization.eval.eval_streaming:main"
 vsf-create-gt      = "vsf_diarization.create_ground_truth:main"
+vsf-serve          = "vsf_diarization.serve.api:main"
 
 [tool.setuptools.packages.find]
 include = ["vsf_diarization*"]
+
+[tool.setuptools.package-data]
+"vsf_diarization.serve" = ["static/*"]   # frontend (html/css/js) đi kèm package
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
