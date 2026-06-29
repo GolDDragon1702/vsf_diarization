@@ -15,7 +15,8 @@ _PALETTE = ["#2563eb", "#dc2626", "#059669", "#d97706", "#7c3aed", "#0891b2"]
 
 
 def _render(turns: list[dict]) -> str:
-    colors, html = {}, []
+    colors: dict[str, str] = {}
+    html: list[str] = []
     for t in turns:
         spk = t["speaker"]
         colors.setdefault(spk, _PALETTE[len(colors) % len(_PALETTE)])

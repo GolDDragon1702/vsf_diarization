@@ -52,7 +52,7 @@ pip install -e .                # cơ bản
 cp .env.example .env            # rồi mở .env điền HF_TOKEN=hf_xxxx...
 ```
 
-Sau khi cài, các lệnh **`vsf-diarize` · `vsf-stream` · `vsf-evaluate` · `vsf-eval-streaming` · `vsf-create-gt`** có sẵn trên PATH (xem [Bảng tra cứu](#bảng-tra-cứu-chạy-từng-script)). Hoặc dùng Docker (mục [Docker](#docker-gpu) bên dưới).
+Sau khi cài, các lệnh **`vsf-diarize` · `vsf-stream` · `vsf-serve` · `vsf-evaluate` · `vsf-eval-streaming` · `vsf-create-gt`** có sẵn trên PATH (xem [Bảng tra cứu](#bảng-tra-cứu-chạy-từng-script)). Hoặc dùng Docker (mục [Docker](#docker-gpu) bên dưới).
 
 > **Nemotron-3.5-ASR (tùy chọn):** chỉ chạy được trên **Linux/WSL**. Không cài vào venv này — dùng `bash run_nemotron.sh` trong WSL (tự tạo venv riêng).
 
@@ -91,20 +91,33 @@ vsf-serve                                              # → http://127.0.0.1:80
 ```
 
 Mở **http://127.0.0.1:8000/** để vào giao diện web: tải file *hoặc* ghi mic trực tiếp
-(real-time qua WebSocket), transcript hiện dạng bong bóng tô màu theo người nói, kèm
-dashboard giám sát các chỉ số.
+(real-time qua WebSocket), transcript dạng bong bóng tô màu theo người nói. Tiện ích UX:
+**audio player đồng bộ** (bấm turn → tua + highlight đoạn đang phát), **timeline người nói**,
+**đổi tên speaker tại chỗ** (bấm avatar), **xuất TXT/SRT/VTT/CSV/JSON**. Khi ghi mic hiện
+caption **"🎧 đang nghe…"** ngay (giảm cảm giác trễ ~6s); chấm trạng thái phản ánh `/ready`
+(model + GPU). Cuối trang có dashboard giám sát. Upload được **validate** định dạng + kích
+thước (mặc định ≤ 100MB, đổi qua `VSF_MAX_UPLOAD_MB`) với báo lỗi rõ ràng.
 
 | Endpoint | Mô tả |
 |----------|-------|
 | `/` | **Giao diện web** (upload + mic real-time + dashboard) |
 | `POST /transcribe` | upload file audio → JSON `{turns:[{speaker,start,end,text}], rtf}` |
 | `WS /ws/stream` | gửi PCM float32 16kHz mono → nhận turn real-time (gửi `EOF` để chốt) |
-| `GET /health` · `GET /metrics` | health-check + thống kê JSON (device, avg RTF, #request) |
-| `GET /metrics/prometheus` | metrics chuẩn Prometheus (xem [monitoring/](monitoring/)) |
+| `GET /health` | **liveness** — process sống (luôn 200) |
+| `GET /ready` | **readiness** — model đã nạp + GPU sống → 200, ngược lại 503 |
+| `GET /metrics` · `GET /metrics/prometheus` | thống kê JSON + metrics chuẩn Prometheus ([monitoring/](monitoring/)) |
 | `/demo` | giao diện Gradio thay thế |
 
 Model load **một lần** rồi cache dùng chung ([serve/models.py](vsf_diarization/serve/models.py)).
-Mọi request được **log có cấu trúc**; metrics + Prometheus/Grafana: xem [monitoring/README.md](monitoring/README.md).
+Mọi request được **log có cấu trúc**. Giám sát đầy đủ (App + Prometheus + Grafana, dashboard
+nạp sẵn) trong **1 lệnh**:
+
+```bash
+export HF_TOKEN=hf_xxx
+docker compose -f monitoring/docker-compose.yml up --build   # App :8000 · Prometheus :9090 · Grafana :3000
+```
+
+Chi tiết metrics & dashboard: [monitoring/README.md](monitoring/README.md).
 
 ### Đánh giá chất lượng (cần ground truth)
 
@@ -162,8 +175,8 @@ vsf_diarization/                    # ← Python package (pip install -e .)
 └── create_ground_truth.py      # vsf-create-gt : tạo draft GT (annotate tay → reviewed)
 
 tests/                          # unit test thuần (pytest, không cần GPU/model) — fake pipeline
-monitoring/                     # Prometheus + Grafana (docker-compose) giám sát /metrics/prometheus
-.github/workflows/ci.yml        # CI: cài torch CPU + chạy pytest mỗi push/PR
+monitoring/                     # full-stack compose (App+Prometheus+Grafana) + dashboard nạp sẵn
+.github/workflows/ci.yml        # CI: ruff + mypy + pytest trên CPU mỗi push/PR
 pyproject.toml                  # metadata + deps + entry points vsf-* + extras [serve]/[dev]
 Dockerfile / .dockerignore      # image GPU CUDA 12.8
 run_nemotron.sh                 # Nemotron benchmark (WSL2)
@@ -330,7 +343,7 @@ Trượt cửa sổ 6s/bước 1s; mỗi cửa sổ vote cho từng frame 50ms �
 → Chạy CPU với `CUDA_VISIBLE_DEVICES=""`
 
 **Nemotron / NeMo lỗi trên Windows** (numpy decode rỗng, `PermissionError WinError 32` manifest)
-→ NeMo transcribe() không chạy trên Windows native. Dùng WSL2: `bash run_nemotron.sh` (xem [REPORT.md](REPORT.md) mục 8.1)
+→ NeMo transcribe() không chạy trên Windows native. Dùng WSL2: `bash run_nemotron.sh` (xem [REPORT.md](REPORT.md) mục 9.1)
 
 **`bad interpreter` / lỗi `\r`** khi chạy `run_nemotron.sh` trong WSL
 → File bị CRLF: `sed -i 's/\r$//' run_nemotron.sh` rồi chạy lại
@@ -340,11 +353,13 @@ Trượt cửa sổ 6s/bước 1s; mỗi cửa sổ vote cho từng frame 50ms �
 ## Test
 
 ```bash
-pip install -e ".[dev]"     # pytest + httpx
-pytest                      # unit test thuần (không cần GPU/model/HF token)
+pip install -e ".[dev]"     # pytest + httpx + ruff + mypy
+ruff check vsf_diarization tests    # lint
+mypy                                # type-check (module serve + streaming_session)
+pytest                              # unit test thuần (không cần GPU/model/HF token)
 ```
 
-CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) chạy bộ test này trên CPU cho mỗi push/PR.
+CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) chạy **ruff + mypy + pytest** trên CPU cho mỗi push/PR.
 
 ---
 

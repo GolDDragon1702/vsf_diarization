@@ -105,7 +105,7 @@ class StreamingSession:
         frames = []
         for fi in range(self.emit_fi, new_emit_fi):
             v = self.votes.get(fi)
-            frames.append((fi * FRAME_DUR, max(v, key=v.get) if v else None))
+            frames.append((fi * FRAME_DUR, max(v, key=lambda k: v[k]) if v else None))
             self.votes.pop(fi, None)                     # free finalized frames
         self.emit_fi = new_emit_fi
         return self._ingest(_frames_to_segs(frames))

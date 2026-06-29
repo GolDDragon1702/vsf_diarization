@@ -61,8 +61,8 @@ def get_hf_token(cli_token: str | None = None) -> str:
 
 # ── Audio I/O ─────────────────────────────────────────────────────────────────
 
-def load_audio(path: str) -> np.ndarray:
-    """Load audio file to 16kHz mono float32 numpy array."""
+def load_audio(path) -> np.ndarray:
+    """Load audio (đường dẫn str hoặc file-like bytes) → 16kHz mono float32 numpy."""
     import soundfile as sf
     data, sr = sf.read(path, dtype="float32", always_2d=True)
     data = data[:, 0]

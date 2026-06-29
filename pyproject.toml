@@ -36,7 +36,7 @@ serve = [                     # REST/WebSocket API + web UI + observability (pip
     "websockets>=12.0",
     "prometheus-client>=0.20",
 ]
-dev = ["pytest>=7.0", "httpx>=0.27"]   # chạy test: pip install -e ".[dev]" && pytest
+dev = ["pytest>=7.0", "httpx>=0.27", "ruff>=0.5", "mypy>=1.8"]   # test + lint + type
 
 [project.urls]
 Repository = "https://github.com/GolDDragon1702/vsf_diarization"
@@ -58,3 +58,16 @@ include = ["vsf_diarization*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+# E402: nhiều script cố ý reconfigure stdout TRƯỚC import (encoding utf-8 cho tiếng Việt).
+# E702/E731: code dùng style ngắn gọn (semicolon, lambda) nhất quán toàn dự án.
+lint.ignore = ["E402", "E702", "E731"]
+
+[tool.mypy]
+# Type-check tăng dần: chỉ các module mới (đã type). Module ML cũ (pyannote/whisper
+# nặng, untyped) để sau — follow_imports=silent bỏ qua lỗi của chúng.
+files = ["vsf_diarization/serve", "vsf_diarization/core/streaming_session.py"]
+ignore_missing_imports = true
+follow_imports = "silent"

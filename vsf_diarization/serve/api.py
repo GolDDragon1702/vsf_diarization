@@ -17,20 +17,25 @@ Models load lazy ở request đầu (xem serve/models.py) và được cache dù
 
 import io
 import json
+import os
 import time
 from pathlib import Path
+from typing import Any
 
 import numpy as np
-from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect, Query
-from starlette.responses import RedirectResponse
+from fastapi import (
+    FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect, Query, HTTPException,
+)
+from starlette.responses import RedirectResponse, JSONResponse
 from starlette.staticfiles import StaticFiles
 
 from vsf_diarization.core.utils import load_audio, SAMPLE_RATE
 from vsf_diarization.core.streaming_session import StreamingSession
-from vsf_diarization.serve.models import get_models, METRICS
+from vsf_diarization.serve.models import get_models, is_loaded, gpu_alive, METRICS
 from vsf_diarization.serve import observability as obs
 
 STATIC_DIR = Path(__file__).parent / "static"
+MAX_UPLOAD_MB = float(os.environ.get("VSF_MAX_UPLOAD_MB", "100"))
 
 
 def create_app(mount_demo: bool = True) -> FastAPI:
@@ -41,7 +46,19 @@ def create_app(mount_demo: bool = True) -> FastAPI:
 
     @app.get("/health")
     def health():
-        return {"status": "ok", "models_loaded": METRICS.snapshot()["models_loaded"]}
+        """Liveness: process còn sống — luôn 200 (dùng cho livenessProbe)."""
+        return {"status": "alive"}
+
+    @app.get("/ready")
+    def ready():
+        """Readiness: model đã nạp **và** GPU còn sống → 200, ngược lại 503.
+        Không tự kích hoạt load (chạy `vsf-serve --warmup` hoặc gọi /transcribe 1 lần)."""
+        loaded, gpu = is_loaded(), gpu_alive()
+        ok = loaded and gpu
+        return JSONResponse(
+            {"ready": ok, "models_loaded": loaded, "gpu_ok": gpu, "device": METRICS.device},
+            status_code=200 if ok else 503,
+        )
 
     @app.get("/metrics")
     def metrics():
@@ -50,16 +67,27 @@ def create_app(mount_demo: bool = True) -> FastAPI:
     @app.post("/transcribe")
     async def transcribe(
         file: UploadFile = File(...),
-        language: str = Query("vi"),
-        num_speakers: int | None = Query(None),
-        chunk: float = Query(6.0),
-        step: float = Query(1.0),
-        threshold: float = Query(0.70),
-        min_asr: float = Query(1.0),
+        language: str = Query("vi", max_length=10),
+        num_speakers: int | None = Query(None, ge=1, le=10),
+        chunk: float = Query(6.0, gt=0, le=30),
+        step: float = Query(1.0, gt=0, le=10),
+        threshold: float = Query(0.70, gt=0, le=1),
+        min_asr: float = Query(1.0, ge=0, le=10),
     ):
         """Upload audio (wav/mp3/…) → list turn {speaker,start,end,text} + RTF."""
         raw = await file.read()
-        data = load_audio(io.BytesIO(raw))
+        if not raw:
+            raise HTTPException(400, "File rỗng.")
+        if len(raw) > MAX_UPLOAD_MB * 1e6:
+            raise HTTPException(413, f"File quá lớn (> {MAX_UPLOAD_MB:.0f}MB). "
+                                     "Tăng giới hạn qua biến môi trường VSF_MAX_UPLOAD_MB.")
+        try:
+            data = load_audio(io.BytesIO(raw))
+        except Exception:
+            raise HTTPException(400, f"Không đọc được audio từ '{file.filename}' "
+                                     "(định dạng không hỗ trợ hoặc file hỏng).")
+        if len(data) < int(0.1 * SAMPLE_RATE):
+            raise HTTPException(400, "Audio quá ngắn (< 0.1s).")
         dur = len(data) / SAMPLE_RATE
 
         m = get_models()
@@ -92,8 +120,8 @@ def create_app(mount_demo: bool = True) -> FastAPI:
         METRICS.ws_sessions += 1
         obs.ws_open()
         m = get_models()
-        cfg = {"language": "vi", "num_speakers": None, "chunk_s": 6.0,
-               "step_s": 1.0, "threshold": 0.70, "min_asr": 1.0}
+        cfg: dict[str, Any] = {"language": "vi", "num_speakers": None, "chunk_s": 6.0,
+                               "step_s": 1.0, "threshold": 0.70, "min_asr": 1.0}
         session = StreamingSession(m["pipeline"], m["whisper"], **cfg)
         configured = False
         fed_s = 0.0

@@ -20,14 +20,12 @@ import time
 import warnings
 from pathlib import Path
 
-import torch
-
 sys.stdout.reconfigure(encoding="utf-8")
 warnings.filterwarnings("ignore")
 
 from vsf_diarization.core.utils import (
     get_hf_token, load_audio, load_diarization_pipeline, load_whisper,
-    whisper_transcribe, qwen_transcribe, compute_der, compute_asr_metrics, fmt_time,
+    whisper_transcribe, qwen_transcribe, compute_der, compute_asr_metrics,
     read_gt as load_ground_truth, iter_wavs, SAMPLE_RATE,
 )
 from vsf_diarization.core.diarize_offline import run_offline

@@ -1,20 +1,42 @@
-# Stack giám sát: Prometheus (thu metric) + Grafana (dashboard).
-# Dùng kèm API đang chạy `vsf-serve` ở host:8000.
-#   docker compose -f monitoring/docker-compose.yml up
-#   Prometheus → http://localhost:9090     Grafana → http://localhost:3000 (admin/admin)
-# Trong Grafana: Add data source → Prometheus → http://prometheus:9090
+# Full-stack 1 lệnh: API (GPU) + Prometheus + Grafana (đã cấu hình sẵn dashboard).
+#   export HF_TOKEN=hf_xxx
+#   docker compose -f monitoring/docker-compose.yml up --build
+# → App http://localhost:8000/   Prometheus http://localhost:9090   Grafana http://localhost:3000 (admin/admin)
+# Grafana tự nạp datasource Prometheus + dashboard "VSF Diarization".
 services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    command: vsf-serve --host 0.0.0.0 --warmup
+    environment:
+      - HF_TOKEN=${HF_TOKEN:?Cần export HF_TOKEN}
+      - VSF_COMPUTE_TYPE=${VSF_COMPUTE_TYPE:-}
+    ports: ["8000:8000"]
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - { driver: nvidia, count: all, capabilities: [gpu] }
+
   prometheus:
     image: prom/prometheus:latest
     ports: ["9090:9090"]
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    depends_on: [app]
 
   grafana:
     image: grafana/grafana:latest
     ports: ["3000:3000"]
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on: [prometheus]
+
+volumes:
+  hf-cache:

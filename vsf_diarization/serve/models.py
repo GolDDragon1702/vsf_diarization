@@ -54,6 +54,23 @@ def get_models() -> dict:
     return _MODELS
 
 
+def is_loaded() -> bool:
+    """Models đã nạp vào VRAM/RAM chưa (không kích hoạt load)."""
+    return _MODELS is not None
+
+
+def gpu_alive() -> bool:
+    """GPU còn dùng được không (làm 1 phép tính nhỏ trên CUDA). CPU-mode coi như OK."""
+    try:
+        import torch
+        if not torch.cuda.is_available():
+            return True
+        x = torch.zeros(1, device="cuda")
+        return bool((x + 1).item() == 1.0)
+    except Exception:
+        return False
+
+
 # ── Monitoring ─────────────────────────────────────────────────────────────────
 
 @dataclass

@@ -1,6 +1,6 @@
 # Báo cáo: Hệ thống Diarization + ASR Tiếng Việt
 
-> Cập nhật lần cuối: 2026-06-25 (đóng gói package `vsf_diarization` + Whisper mặc định int8_float16). Đánh giá trên **toàn bộ folder `test/`** (ground truth đã reviewed).
+> Cập nhật lần cuối: 2026-06-29 (thêm lớp triển khai: real-time streaming engine, REST/WebSocket API, web UI, observability Prometheus/Grafana, CI — **mục 8**). Đánh giá chất lượng trên **toàn bộ folder `test/`** (ground truth đã reviewed).
 
 ---
 
@@ -116,11 +116,19 @@ vsf_diarization/                # ← Python package
 │  ── core/ — module dùng chung (import) ─────────────────────
 ├── core/diarize_offline.py     # run_offline(): pyannote full-audio → (segments, elapsed)
 ├── core/diarize_online.py      # run_online() + stream_online(): sliding window + majority vote
+├── core/streaming_session.py   # StreamingSession: engine real-time, feed chunk → turn (mic/WebSocket) — mục 8.1
 ├── core/utils.py               # load_audio, load_models, whisper/qwen_transcribe, compute_der, load_gt, iter_wavs
 │
 │  ── pipelines/ — entry points inference ──────────────────────
 ├── pipelines/pipeline.py            # vsf-diarize : offline diarization (+ASR) --asr none|whisper|qwen
-├── pipelines/pipeline_streaming.py  # vsf-stream  : streaming real-time; --no-asr = chỉ diarization
+├── pipelines/pipeline_streaming.py  # vsf-stream  : streaming real-time; --live = mic thật; --no-asr
+│
+│  ── serve/ — API + web UI + observability (mục 8) ────────────
+├── serve/api.py                # vsf-serve : FastAPI / · /transcribe · /ws/stream · /health · /ready · /metrics
+├── serve/static/               # frontend web (upload + mic real-time + dashboard giám sát)
+├── serve/models.py             # cache model (load 1 lần) + readiness (GPU sống) + Metrics JSON
+├── serve/observability.py      # logging có cấu trúc + Prometheus metrics + middleware
+├── serve/demo.py               # Gradio UI thay thế
 │
 │  ── eval/ — evaluation & comparison ─────────────────────────
 ├── eval/evaluate.py            # vsf-evaluate : offline vs GT — DER, WER, CER (+Qwen)
@@ -133,8 +141,11 @@ vsf_diarization/                # ← Python package
 ├── eval/compare_asr_3models.py # In bảng 3 model từ outputs/asr_*.json (không GPU)
 └── create_ground_truth.py      # vsf-create-gt : tạo draft GT để annotate tay
 
-pyproject.toml                  # metadata + deps + entry points vsf-*
-Dockerfile / .dockerignore      # image GPU CUDA 12.8
+tests/                          # unit test thuần (pytest + fake pipeline, không cần GPU/model)
+monitoring/                     # full-stack compose (App+Prometheus+Grafana) + Grafana dashboard
+.github/workflows/ci.yml        # CI: ruff + mypy + pytest (CPU)
+pyproject.toml                  # metadata + deps + entry points vsf-* + extras [serve]/[dev]
+Dockerfile / .dockerignore      # image GPU CUDA 12.8 (CLI + server)
 run_nemotron.sh                 # Nemotron benchmark (WSL2)
 ground_truth/ · test/ · outputs/  # dữ liệu runtime (.gitignore)
 ```
@@ -180,9 +191,6 @@ ground_truth/ · test/ · outputs/  # dữ liệu runtime (.gitignore)
 | **Trung bình (int8 mặc định)** | toàn bộ | **11.08%** | — | — | — | **13.92%** | **10.32%** | **0.48x** |
 
 > Đây là DER của **pipeline đầy đủ** (pyannote + gán speaker per-word của Whisper). test08/10/11 đạt DER 0% vì là monologue / hội thoại rõ ràng + word-align làm sạch biên. Lưu ý DER này thấp hơn DER của **pyannote thô** (mục 6.2) do bước gán lại theo word-timestamp.
-
-> **test02 & test07** — DER cao (32.79% / 29.36%) chủ yếu là Confusion: clustering toàn cục của pyannote tách nhầm 2 giọng giống nhau; online streaming sửa được (mục 6.2).
-> **test05** — WER 33.44%: nội dung chuyên môn / phát âm khác biệt khiến Whisper nhận nhầm nhiều.
 
 ### 5.2 Benchmark ASR có kiểm soát — Whisper vs Qwen3 vs Nemotron 3.5
 
@@ -230,10 +238,10 @@ ground_truth/ · test/ · outputs/  # dữ liệu runtime (.gitignore)
 | Word timestamp (gán speaker incremental) | tùy | ❌ | ✅ |
 | Chạy trên Windows | ❌ (cần Linux/WSL) | ✅ | ✅ |
 
-- **Nemotron-3.5-0.6b** — model *duy nhất thiết kế gốc cache-aware streaming* (latency 80ms–1s), nhỏ nhất → kỳ vọng nhanh nhất. **Chưa chạy được trên Windows** (mục 8.1).
+- **Nemotron-3.5-0.6b** — model *duy nhất thiết kế gốc cache-aware streaming* (latency 80ms–1s), nhỏ nhất → kỳ vọng nhanh nhất. **Chưa chạy được trên Windows** (mục 9.1).
 - **Whisper turbo** — khả dụng ngay, có **word timestamp** cho emit `(speaker, text)` incremental; đổi lại WER đoạn ngắn cao hơn Qwen. Qwen3 WER thấp hơn nhưng RTF > 1 + thiếu word timestamp.
 
-> ⚠️ **Nemotron chưa benchmark được trên Windows native** — NeMo `transcribe()` lỗi (numpy→rỗng / khóa manifest `WinError 32`). Adapter đã viết đúng API (`target_lang="vi-VN"`), chạy được trên Linux/WSL — xem mục 8.1.
+> ⚠️ **Nemotron chưa benchmark được trên Windows native** — NeMo `transcribe()` lỗi (numpy→rỗng / khóa manifest `WinError 32`). Adapter đã viết đúng API (`target_lang="vi-VN"`), chạy được trên Linux/WSL — xem mục 9.1.
 
 ---
 
@@ -422,36 +430,102 @@ emit_fi = new_emit_fi
 
 ---
 
-## 8. Hướng phát triển tiếp theo
+## 8. Triển khai: real-time streaming, API & observability
 
-### 8.1 ASR
-- [ ] **Benchmark Nemotron-3.5 trên Linux/WSL** — adapter sẵn trong `eval/eval_asr_models.py` (`--model nemotron`); Windows native lỗi `transcribe()` (numpy→rỗng, file→lock manifest). Chạy `bash run_nemotron.sh` trong WSL. Model 0.6B streaming latency thấp.
-- [ ] Giảm WER nội dung chuyên môn (test05 ~33%): fine-tune Whisper / tích hợp LM hậu xử lý.
+Lớp sản phẩm hoá đưa pipeline nghiên cứu (mục 5–6) thành dịch vụ chạy được: mic real-time
+thật, REST/WebSocket API, web UI, và giám sát đầy đủ.
 
-### 8.2 Diarization
-- [ ] Fine-tune pyannote embedding extractor trên giọng Việt (mục tiêu DER < 8%); Spectral Clustering cho > 2 người nói.
+### 8.1 Engine real-time `StreamingSession`
 
-### 8.3 Streaming
-- [ ] Giảm WER streaming: turn 1–1.5s hay hallucinate — `min_asr` không cứu được (đã quét xác nhận); thử lọc `no_speech_prob`/`avg_logprob` của Whisper.
-- [ ] Mic real-time đúng nghĩa: hiện ghi tới Ctrl-C rồi xử lý; cần biến `stream_online()` thành API nhận chunk liên tục.
+`stream_online()` (mục 6.4) xử lý **mảng numpy cố định**; `StreamingSession`
+(`core/streaming_session.py`) tổng quát hoá *đúng* thuật toán sliding-window + majority-vote
+50ms sang **input tăng dần**: đẩy audio chunk khi nó tới (mic / WebSocket) → nhận turn ngay
+khi ổn định. Cùng độ chính xác, chỉ khác cách nạp dữ liệu.
 
-### 8.4 Hạ tầng
-- [ ] Đóng gói REST API (FastAPI) — input audio stream, output WebSocket JSON events; Docker + CUDA.
+- API: `feed(audio_chunk) -> [turn…]` (turn chốt được tới hiện tại) · `finalize() -> [turn…]` (chốt đuôi).
+- Tái dùng `SpeakerRegistry` + `_frames_to_segs` + `transcribe_turn`; votes lưu `dict` thưa, giải phóng frame đã chốt → bộ nhớ không phình theo cửa sổ.
+- Latency ≈ chunk × RTF ≈ 0.9s. **Kiểm chứng tương đương:** trên test01, feed theo block 0.5s cho **DER 7.04% ≈ đường `stream_online` tham chiếu 7.16%** (chênh do engine loại fragment < 0.3s).
+- Mic real-time thật: `vsf-stream --source mic --live` (xử lý ngay khi nói, in turn liền — thay cho chế độ ghi-tới-Ctrl-C cũ).
+
+### 8.2 REST + WebSocket API (`vsf-serve`)
+
+FastAPI (`serve/api.py`), model **cache load 1 lần** dùng chung mọi request (`serve/models.py`):
+
+| Endpoint | Mô tả |
+|---|---|
+| `POST /transcribe` | upload file → `{turns:[{speaker,start,end,text}], rtf}` (đo thật: 10 turn, RTF 0.37x trên test01); **validate** định dạng + size (≤ `VSF_MAX_UPLOAD_MB`, mặc định 100) → 400/413/422 báo lỗi rõ |
+| `WS /ws/stream` | gửi PCM float32 16kHz mono → nhận JSON turn real-time (gửi `EOF` chốt) |
+| `GET /health` | **liveness** — process sống (luôn 200) |
+| `GET /ready` | **readiness** — model đã nạp **và** GPU sống (phép tính nhỏ trên CUDA) → 200, ngược lại 503 |
+| `GET /metrics` · `/metrics/prometheus` | thống kê JSON + metrics chuẩn Prometheus |
+| `/` · `/demo` | web UI tĩnh · Gradio thay thế |
+
+Tách liveness/readiness hợp chuẩn k8s probe — verify: trước load `/ready` 503, sau `/transcribe` 200 (`device: cuda`).
+
+### 8.3 Web UI
+
+Frontend tĩnh (`serve/static/`, vanilla JS, không cần build) tại `/`: tải file (REST) *hoặc*
+ghi mic real-time (WebSocket + Web Audio API, tự resample 16kHz); transcript dạng bong bóng
+tô màu theo người nói. UX: **audio player đồng bộ** (bấm turn → tua + highlight đoạn đang
+phát), **timeline người nói**, **đổi tên speaker tại chỗ**, **xuất TXT/SRT/VTT/CSV/JSON**
+(client-side). Khi ghi hiện caption **"🎧 đang nghe…"** ngay (giảm cảm giác trễ ~6s), chấm
+trạng thái đọc `/ready`. Cuối trang là **dashboard giám sát** (poll `/metrics`). Upload được
+validate định dạng + size ở cả client lẫn server.
+
+### 8.4 Observability
+
+`serve/observability.py` — logging có cấu trúc (mọi request HTTP/WS) + metrics Prometheus:
+
+| Metric | Loại | Ý nghĩa |
+|---|---|---|
+| `vsf_requests_total{endpoint,status}` | Counter | số request |
+| `vsf_request_seconds{endpoint}` | Histogram | độ trễ xử lý |
+| `vsf_rtf{endpoint}` | Histogram | real-time factor |
+| `vsf_audio_seconds_total` · `vsf_turns_total` | Counter | audio đã xử lý · turn phát ra |
+| `vsf_active_ws_sessions` | Gauge | phiên WS đang mở |
+| `vsf_model_load_seconds` · `vsf_gpu_memory_bytes{type}` | Gauge | thời gian load · VRAM |
+
+Full-stack giám sát **1 lệnh**: `docker compose -f monitoring/docker-compose.yml up --build`
+(App + Prometheus + Grafana, Grafana tự nạp datasource + dashboard "VSF Diarization").
+
+### 8.5 Chất lượng & CI
+
+Test thuần (`tests/`, fake pipeline — không cần GPU/model/HF token) phủ: hàm metric, engine
+`StreamingSession` (gồm kiểm chứng feed-từng-block = feed-cả-mảng), endpoint `/health`/`/ready`/`/metrics`.
+CI (`.github/workflows/ci.yml`) chạy **ruff + mypy + pytest** trên CPU mỗi push/PR. mypy theo
+chiến lược *type tăng dần* (scope `serve/` + `streaming_session`, để module ML cũ untyped sau).
 
 ---
 
-## 9. Hạn chế còn lại
+## 9. Hướng phát triển tiếp theo
+
+### 9.1 ASR
+- [ ] **Benchmark Nemotron-3.5 trên Linux/WSL** — adapter sẵn trong `eval/eval_asr_models.py` (`--model nemotron`); Windows native lỗi `transcribe()` (numpy→rỗng, file→lock manifest). Chạy `bash run_nemotron.sh` trong WSL. Model 0.6B streaming latency thấp.
+- [ ] Giảm WER nội dung chuyên môn (test05 ~33%): fine-tune Whisper / tích hợp LM hậu xử lý.
+
+### 9.2 Diarization
+- [ ] Fine-tune pyannote embedding extractor trên giọng Việt (mục tiêu DER < 8%); Spectral Clustering cho > 2 người nói.
+
+### 9.3 Streaming
+- [ ] Giảm WER streaming: turn 1–1.5s hay hallucinate — `min_asr` không cứu được (đã quét xác nhận); thử lọc `no_speech_prob`/`avg_logprob` của Whisper.
+
+### 9.4 Hạ tầng
+- [ ] Auth + rate limit cho API; trim buffer audio trong phiên WS dài.
+
+---
+
+## 10. Hạn chế còn lại
 
 | Vấn đề | Mô tả | Mức độ |
 |--------|-------|--------|
-| Online (default w6) fail 2 ca biên | test04/test09: confusion tăng vọt ở window 6s; **adaptive per-file / w9 sửa được** nhưng default vẫn w6 | Trung bình |
 | int8 mặc định tăng WER ~2% | đổi lấy RTF 0.48x (real-time); dùng `--compute-type float16` nếu cần WER thấp nhất | Thấp |
+| Server chưa giới hạn concurrency | GPU 4GB: 2 request đồng thời có thể OOM — cần semaphore/queue (mục 9.4) | Trung bình |
 | Nemotron chưa đo được trên Windows | NeMo transcribe() lỗi Windows native — cần Linux/WSL | Trung bình |
 | Bộ test còn nhỏ | folder test/ — cần mở rộng để kết luận chắc hơn | Thấp |
 
 ---
 
-## 10. Sample Output
+## 11. Sample Output
 
 Định dạng output mỗi dòng: `[start → end]  SPEAKER_XX : <transcript>`.
 
